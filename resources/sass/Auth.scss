@@ -1,0 +1,174 @@
+// Auth.scss - custom styles for Login and Register pages
+.auth-root {
+  display: flex;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #4e9af1 0%, #3a2db3 100%);
+}
+
+.auth-left {
+  flex: 1.2;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 0 2rem;
+  background: linear-gradient(135deg, #4e9af1 0%, #3a2db3 100%);
+}
+
+.auth-title {
+  font-size: 3rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+  margin-bottom: 0.5rem;
+}
+
+.auth-university {
+  font-size: 1.5rem;
+  font-weight: 500;
+  margin-bottom: 2.5rem;
+}
+
+.auth-system-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.auth-desc {
+  font-size: 1rem;
+  max-width: 500px;
+  text-align: left;
+  opacity: 0.95;
+}
+
+.auth-right {
+  flex: 1;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 370px;
+  background: #fff;
+  border-radius: 1.5rem;
+  box-shadow: 0 4px 24px rgba(44, 62, 80, 0.10);
+  padding: 2.5rem 2rem 2rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.auth-login-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  letter-spacing: 1px;
+}
+
+.auth-form {
+  width: 100%;
+}
+
+.auth-input-group {
+  display: flex;
+  align-items: center;
+  background: #f1f1f1;
+  border-radius: 2rem;
+  margin-bottom: 1.2rem;
+  padding: 0.5rem 1rem;
+}
+
+.auth-icon {
+  margin-right: 0.7rem;
+  color: #888;
+  display: flex;
+  align-items: center;
+}
+
+.auth-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  flex: 1;
+  font-size: 1rem;
+  padding: 0.6rem 0;
+}
+
+.auth-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+}
+
+.auth-remember {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+
+.auth-remember input[type="checkbox"] {
+  accent-color: #2ecc71;
+  margin-right: 0.3rem;
+}
+
+.auth-checkmark {
+  color: #2ecc71;
+  font-weight: bold;
+  margin-right: 0.2rem;
+}
+
+.auth-forgot a {
+  color: #222;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.auth-login-btn {
+  width: 100%;
+  background: linear-gradient(90deg, #2ecc71 0%, #3498db 100%);
+  color: #fff;
+  border: none;
+  border-radius: 2rem;
+  padding: 0.7rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  margin-top: 0.2rem;
+  transition: background 0.2s;
+  box-shadow: 0 2px 8px rgba(44, 62, 80, 0.08);
+}
+
+.auth-login-btn:hover {
+  background: linear-gradient(90deg, #27ae60 0%, #2980b9 100%);
+}
+
+.auth-register-link {
+  margin-top: 1.2rem;
+  text-align: center;
+  font-size: 0.97rem;
+}
+
+@media (max-width: 900px) {
+  .auth-root {
+    flex-direction: column;
+  }
+  .auth-left, .auth-right {
+    flex: unset;
+    width: 100%;
+    min-height: 300px;
+  }
+  .auth-left {
+    padding: 2rem 1rem 1rem 1rem;
+    align-items: flex-start;
+  }
+  .auth-card {
+    margin: 2rem auto;
+  }
+}

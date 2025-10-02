@@ -1,0 +1,213 @@
+// Dashboard.scss - custom styles for dashboard page
+.dashboard-root {
+  padding: 2.5rem 2rem 2rem 2rem;
+  background: #f6f7fb;
+  min-height: 100vh;
+}
+
+.dashboard-banner {
+  background: linear-gradient(90deg, #4e2db3 0%, #1eae98 100%);
+  border-radius: 1.5rem;
+  color: #fff;
+  padding: 1.5rem 2rem 1.5rem 2.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 2px 12px rgba(44,62,80,0.08);
+}
+.dashboard-banner-content {
+  display: flex;
+  flex-direction: column;
+}
+.dashboard-banner-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+.dashboard-banner-sub {
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin-bottom: 0.7rem;
+}
+.dashboard-banner-desc {
+  font-size: 1rem;
+  background: rgba(255,255,255,0.13);
+  border-radius: 0.7rem;
+  padding: 0.5rem 1rem;
+  margin-top: 0.5rem;
+  color: #e0e0e0;
+}
+
+.dashboard-stats-row {
+  display: flex;
+  gap: 1.2rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+.dashboard-stat-card {
+  flex: 1 1 180px;
+  background: linear-gradient(120deg, #e0f7fa 0%, #f8fafc 100%);
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(44,62,80,0.07);
+  padding: 1.2rem 1.5rem;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.dashboard-stat-label {
+  font-size: 1.05rem;
+  color: #555;
+  margin-bottom: 0.3rem;
+}
+.dashboard-stat-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2e2e8a;
+  margin-bottom: 0.2rem;
+}
+.dashboard-stat-change {
+  font-size: 0.95rem;
+  opacity: 0.85;
+}
+
+.dashboard-info-row {
+  display: flex;
+  gap: 1.2rem;
+  margin-bottom: 1.2rem;
+  flex-wrap: wrap;
+}
+.dashboard-info-card {
+  flex: 1 1 320px;
+  background: linear-gradient(120deg, #fffbe6 0%, #f8fafc 100%);
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(44,62,80,0.07);
+  padding: 1.2rem 1.5rem;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.dashboard-semester {
+  background: linear-gradient(120deg, #ffe9c7 0%, #f8fafc 100%);
+}
+.dashboard-faculty {
+  background: linear-gradient(120deg, #e6f0ff 0%, #f8fafc 100%);
+}
+.dashboard-info-label {
+  font-size: 1.05rem;
+  color: #555;
+  margin-bottom: 0.3rem;
+}
+.dashboard-info-main {
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: #e67e22;
+  margin-bottom: 0.2rem;
+}
+.dashboard-info-main span {
+  color: #e67e22;
+}
+.dashboard-info-main-avg {
+  color: #2e2e8a;
+}
+.dashboard-info-sub {
+  font-size: 1rem;
+  color: #888;
+}
+
+.dashboard-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.2rem;
+}
+.dashboard-tab {
+  background: #f5f5f5;
+  border: none;
+  border-radius: 1.2rem;
+  padding: 0.5rem 1.2rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #444;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.dashboard-tab.active {
+  background: linear-gradient(90deg, #7c3aed 0%, #fbbf24 100%);
+  color: #fff;
+}
+
+.dashboard-program-overview {
+  background: #fff;
+  border-radius: 1.2rem;
+  box-shadow: 0 2px 8px rgba(44,62,80,0.07);
+  padding: 1.5rem 2rem;
+  margin-top: 1rem;
+}
+.dashboard-program-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+}
+.dashboard-program-desc {
+  font-size: 1rem;
+  color: #888;
+  margin-bottom: 1.2rem;
+}
+.dashboard-program-bar-card {
+  margin-bottom: 1.2rem;
+}
+.dashboard-program-bar-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.05rem;
+  margin-bottom: 0.3rem;
+}
+.dashboard-program-bar-meta {
+  font-size: 0.95rem;
+  color: #888;
+  margin-left: 1.2rem;
+}
+.dashboard-program-bar-bg {
+  background: #e5e7eb;
+  border-radius: 1.2rem;
+  height: 28px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+.dashboard-program-bar {
+  height: 100%;
+  border-radius: 1.2rem 0 0 1.2rem;
+  transition: width 0.5s;
+}
+.dashboard-program-bar-percent {
+  position: absolute;
+  right: 18px;
+  top: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  color: #222;
+  font-size: 1rem;
+}
+
+@media (max-width: 900px) {
+  .dashboard-root {
+    padding: 1rem 0.2rem;
+  }
+  .dashboard-banner {
+    padding: 1rem 1rem;
+  }
+  .dashboard-stats-row, .dashboard-info-row {
+    flex-direction: column;
+    gap: 0.7rem;
+  }
+  .dashboard-info-card, .dashboard-stat-card {
+    min-width: unset;
+  }
+  .dashboard-program-overview {
+    padding: 1rem 0.5rem;
+  }
+}
