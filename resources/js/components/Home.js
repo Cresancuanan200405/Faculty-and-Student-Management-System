@@ -6,7 +6,7 @@ export default function Home() {
         <div className="home-page">
             <div className="home-hero">
                 <h1>University Faculty Management System</h1>
-                <p>Let your light shine now and forever</p>
+                <p>Transformation in Education: Integrity in Action</p>
                 <Link className="hero-btn" to="/login">login</Link>
             </div>
         </div>
