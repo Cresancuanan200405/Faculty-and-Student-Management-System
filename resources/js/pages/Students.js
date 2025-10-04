@@ -766,7 +766,7 @@ const Students = () => {
                   borderBottom: "1px solid #eee",
                 }}
               >
-                <span>Department</span>
+                <span>Job Classifications</span>
                 <span>Number of Students</span>
               </div>
               {departmentOptions.map((dept) => (

@@ -11,6 +11,13 @@ use App\Http\Controllers\StudentController;
 // Get all active students
 Route::get('/students', [StudentController::class, 'index']);
 
+// Faculty routes
+use App\Http\Controllers\FacultyController;
+Route::get('/faculty', [FacultyController::class, 'index']);
+Route::post('/faculty', [FacultyController::class, 'store']);
+Route::put('/faculty/{id}', [FacultyController::class, 'update']);
+Route::delete('/faculty/{id}', [FacultyController::class, 'destroy']);
+
 // Get archived students
 Route::get('/students/archived', function () {
     return response()->json([
