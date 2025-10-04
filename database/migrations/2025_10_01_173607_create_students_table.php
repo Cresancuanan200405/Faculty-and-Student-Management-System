@@ -22,7 +22,7 @@ class CreateStudentsTable extends Migration
             $table->string('phone');
             $table->string('course_id');
             $table->string('department');
-            $table->year('academic_year');
+            $table->year('academic_year', 9);
             $table->enum('status', ['Active', 'Inactive', 'Graduated', 'Suspended']);
             $table->string('email')->nullable();
             $table->timestamps();

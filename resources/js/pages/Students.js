@@ -13,7 +13,7 @@ const initialState = {
   department: "",
   academic_year: "",
   status: "",
-  program: "", // Add a new field to initialState for program
+  program: "",
 };
 
 const departmentOptions = [
@@ -36,8 +36,42 @@ const yearFolders = [
   "SY 2024-2025",
 ];
 
+const departmentSubfolders = {
+  "Accountancy": [
+    "Accountancy",
+    "Accounting Information System",
+    "Internal Auditing",
+    "Management Accounting"
+  ],
+  "Business Administration": [
+    "Business Administration Program",
+    "Operation Management",
+    "Financials Management",
+    "Marketing Management",
+    "Human Resource Management"
+  ],
+  "Computer Studies": [
+    "Computer Science",
+    "Information Technology",
+    "Information Technology with special training in Computer Animation",
+    "Diploma in Information Technology",
+    "Library and Information Science",
+    "Entertainment and Multimedia Computing"
+  ],
+  "Engineering Technology": [
+    "Civil Engineering",
+    "Industrial Engineering"
+  ],
+  "Teacher Education": [
+    "Elementary Education",
+    "Early Childhood Education",
+    "Physical Education",
+    "Special Needs Education",
+    "Secondary Education"
+  ]
+};
+
 const Students = () => {
-  const [tab, setTab] = useState("All Students");
   const [search, setSearch] = useState("");
   const [students, setStudents] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -49,19 +83,18 @@ const Students = () => {
   const [editForm, setEditForm] = useState(initialState);
   const [editId, setEditId] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [archivedStudents, setArchivedStudents] = useState([]);
   const [selectedYear, setSelectedYear] = useState(null);
   const [selectedDept, setSelectedDept] = useState(null);
   const [selectedSubDept, setSelectedSubDept] = useState(null);
+  const [editLoading, setEditLoading] = useState(false);
   const [customYears, setCustomYears] = useState(() => {
-    // Persist custom years in localStorage so they survive reloads
     const saved = localStorage.getItem("customYears");
     return saved ? JSON.parse(saved) : [];
   });
   const [showAddYearModal, setShowAddYearModal] = useState(false);
   const [newYearStart, setNewYearStart] = useState("");
   const [addYearSuccess, setAddYearSuccess] = useState(false);
-  const [yearMenuOpen, setYearMenuOpen] = useState(null); // holds the label of the open menu
+  const [yearMenuOpen, setYearMenuOpen] = useState(null);
   const yearMenuRef = useRef(null);
   const [archivedYears, setArchivedYears] = useState(() => {
     const saved = localStorage.getItem("archivedYears");
@@ -70,11 +103,15 @@ const Students = () => {
   const [archiveYearSuccess, setArchiveYearSuccess] = useState(false);
   const [restoreYearSuccess, setRestoreYearSuccess] = useState(false);
   const [restoredYearLabel, setRestoredYearLabel] = useState("");
+  const [addYearError, setAddYearError] = useState("");
+  const [deleteYearSuccess, setDeleteYearSuccess] = useState(false);
+  const [studentAddSuccess, setStudentAddSuccess] = useState(false);
+  const [studentDeleteSuccess, setStudentDeleteSuccess] = useState(false);
+  const [studentEditSuccess, setStudentEditSuccess] = useState(false);
 
-  // Combine default and custom year folders
   const allYearFolders = [...yearFolders, ...customYears];
 
-  // Show success message for 2 seconds when a folder is added
+  // Success message timeouts
   useEffect(() => {
     if (addYearSuccess) {
       const t = setTimeout(() => setAddYearSuccess(false), 2000);
@@ -82,7 +119,6 @@ const Students = () => {
     }
   }, [addYearSuccess]);
 
-  // Show archive success message for 2 seconds
   useEffect(() => {
     if (archiveYearSuccess) {
       const t = setTimeout(() => setArchiveYearSuccess(false), 2000);
@@ -90,7 +126,6 @@ const Students = () => {
     }
   }, [archiveYearSuccess]);
 
-  // Show restore success message for 2 seconds
   useEffect(() => {
     if (restoreYearSuccess) {
       const t = setTimeout(() => setRestoreYearSuccess(false), 2000);
@@ -98,17 +133,42 @@ const Students = () => {
     }
   }, [restoreYearSuccess]);
 
-  // Persist custom years in localStorage
+  useEffect(() => {
+    if (deleteYearSuccess) {
+      const t = setTimeout(() => setDeleteYearSuccess(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [deleteYearSuccess]);
+
+  useEffect(() => {
+    if (studentAddSuccess) {
+      const t = setTimeout(() => setStudentAddSuccess(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [studentAddSuccess]);
+
+  useEffect(() => {
+    if (studentDeleteSuccess) {
+      const t = setTimeout(() => setStudentDeleteSuccess(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [studentDeleteSuccess]);
+
+  useEffect(() => {
+    if (studentEditSuccess) {
+      const t = setTimeout(() => setStudentEditSuccess(false), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [studentEditSuccess]);
+
   useEffect(() => {
     localStorage.setItem("customYears", JSON.stringify(customYears));
   }, [customYears]);
 
-  // Persist archived years in localStorage
   useEffect(() => {
     localStorage.setItem("archivedYears", JSON.stringify(archivedYears));
   }, [archivedYears]);
 
-  // Fetch students from backend on mount
   useEffect(() => {
     const fetchStudents = async () => {
       try {
@@ -121,28 +181,10 @@ const Students = () => {
     fetchStudents();
   }, []);
 
-  const fetchArchivedStudents = async () => {
-    try {
-      const res = await axios.get("/api/students/archived");
-      setArchivedStudents(res.data.students || []);
-    } catch {
-      setArchivedStudents([]);
-    }
-  };
-
-  // When toggling showArchived, fetch archived students if needed
-  useEffect(() => {
-    if (showArchived) {
-      fetchArchivedStudents();
-    }
-  }, [showArchived]);
-
-  // Handle input changes
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  // Handle Add Student submit
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -159,36 +201,34 @@ const Students = () => {
       setError("Please fill in all required fields.");
       return;
     }
-    // Basic email validation
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
       setError("Please enter a valid email address.");
       return;
     }
-    // Prevent future birthdates
     if (form.birthdate && new Date(form.birthdate) > new Date()) {
       setError("Birthdate cannot be in the future.");
       return;
     }
-    const submitData = {
-      ...form,
-      department: form.program || form.department, // use program if selected
-    };
+    const submitData = { ...form };
+    // Remove "SY " prefix if present
+    if (submitData.academic_year.startsWith("SY ")) {
+      submitData.academic_year = submitData.academic_year.replace(/^SY\s*/, "");
+    }
+    if (!departmentSubfolders[form.department]) {
+      delete submitData.program;
+    }
     setLoading(true);
     try {
       const res = await axios.post("/api/students", submitData);
-      // Optimistically add the new student to the UI
       setStudents((prev) => [
         ...(prev || []),
-        res.data.student || submitData // Use returned student or fallback
+        res.data.student || submitData
       ]);
       setMessage("Student added successfully!");
       setShowModal(false);
       setForm(initialState);
-      // Optionally, you can still refetch to ensure data consistency
-      // const refreshed = await axios.get("/api/students");
-      // setStudents(refreshed.data.students || []);
+      setStudentAddSuccess(true);
     } catch (err) {
-      // Show backend validation errors if available
       if (err.response?.data?.errors) {
         const errors = err.response.data.errors;
         setError(
@@ -207,48 +247,89 @@ const Students = () => {
   };
 
   const handleEdit = (student) => {
-    setEditForm(student);
-    setEditId(student.id);
+    // Fill missing keys with empty string
+    const filledStudent = { ...initialState, ...student };
+
+    // Try to find the correct department and program for the student
+    let department = filledStudent.department;
+    let program = filledStudent.program;
+
+    let foundDept = null;
+    Object.entries(departmentSubfolders).forEach(([dept, programs]) => {
+      if (programs.includes(filledStudent.department)) {
+        foundDept = dept;
+        program = filledStudent.department;
+      }
+      if (programs.includes(filledStudent.program)) {
+        foundDept = dept;
+        program = filledStudent.program;
+      }
+    });
+
+    if (foundDept) {
+      department = foundDept;
+    }
+
+    if (departmentSubfolders[department] && !program) {
+      if (departmentSubfolders[department].length === 1) {
+        program = departmentSubfolders[department][0];
+      }
+    }
+
+    setEditForm({
+      ...filledStudent,
+      department: department || "",
+      program: program || "",
+    });
+    setEditId(filledStudent.id);
     setEditModal(true);
   };
 
-  const handleArchive = async (id) => {
-    if (!window.confirm("Archive this student?")) return;
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setEditLoading(true);
+    setError("");
     try {
-      await axios.delete(`/api/students/${id}`);
-      setStudents(students.filter((s) => s.id !== id));
-    } catch {
-      alert("Failed to archive student.");
-    }
-  };
-
-  const handleRestore = async (id) => {
-    try {
-      await axios.post(`/api/students/${id}/restore`);
-      fetchArchivedStudents();
+      await axios.put(`/api/students/${editId}`, editForm);
       const refreshed = await axios.get("/api/students");
       setStudents(refreshed.data.students || []);
-    } catch {
-      alert("Failed to restore student.");
+      setEditModal(false);
+      setStudentEditSuccess(true);
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+        (err.response?.data?.errors
+          ? Object.values(err.response.data.errors).flat().join(" ")
+          : "Failed to update student.")
+      );
+    } finally {
+      setEditLoading(false);
     }
   };
 
-  // Update handleAddYear to accept input like "2025-2026"
   const handleAddYear = (e) => {
     e.preventDefault();
+    setAddYearError("");
     const trimmed = newYearStart.trim();
-    // Validate format: ####-####
-    if (!/^\d{4}-\d{4}$/.test(trimmed)) return;
-    const label = `SY ${trimmed}`;
-    if (!allYearFolders.includes(label)) {
-      setCustomYears((prev) => [...prev, label]);
-      setAddYearSuccess(true);
+    if (!/^\d{4}-\d{4}$/.test(trimmed)) {
+      setAddYearError("Please enter a valid format (e.g. 2025-2026).");
+      return;
     }
+    const label = `SY ${trimmed}`;
+    // Check for duplicates (case-insensitive)
+    const exists = allYearFolders.some(
+      (y) => y.toLowerCase() === label.toLowerCase()
+    );
+    if (exists) {
+      setAddYearError("This School Year folder already exists.");
+      return;
+    }
+    setCustomYears((prev) => [...prev, label]);
+    setAddYearSuccess(true);
     setShowAddYearModal(false);
     setNewYearStart("");
   };
 
-  // Handler for deleting a year folder
   const handleDeleteYear = (label) => {
     const input = window.prompt(
       `Type CONFIRM to permanently delete the folder "${label}". This cannot be undone.`
@@ -256,19 +337,18 @@ const Students = () => {
     if (input && input.trim().toLowerCase() === "confirm") {
       setCustomYears((prev) => prev.filter((y) => y !== label));
       setYearMenuOpen(null);
+      setDeleteYearSuccess(true);
     }
   };
 
-  // Handler for archiving a year folder (example: just hides it for now)
   const handleArchiveYear = (label) => {
     if (!archivedYears.includes(label)) {
       setArchivedYears((prev) => [...prev, label]);
-      setArchiveYearSuccess(true); // Show success message
+      setArchiveYearSuccess(true);
     }
     setYearMenuOpen(null);
   };
 
-  // Handler for restoring an archived year folder
   const handleRestoreYear = (label) => {
     const input = window.prompt(
       `Type CONFIRM to restore the folder "${label}" from the archives.`
@@ -280,7 +360,6 @@ const Students = () => {
     }
   };
 
-  // Close 3-dot menu when clicking outside
   useEffect(() => {
     if (!yearMenuOpen) return;
     const handleClickOutside = (event) => {
@@ -297,7 +376,6 @@ const Students = () => {
     };
   }, [yearMenuOpen]);
 
-  // Derived variable for filtered students based on search query
   const filteredStudents = students.filter(stu => {
     const query = search.trim().toLowerCase();
     if (!query) return true;
@@ -311,30 +389,24 @@ const Students = () => {
     );
   });
 
-  // Add this derived variable to determine if a search is active
   const isSearchActive = search.trim().length > 0;
 
-  // Helper: group students by year and department/program
   const studentsByYearDept = {};
 
   filteredStudents.forEach((stu) => {
     let yearFolder = "";
 
-    if (stu.academic_year) {
-      // If already in "YYYY-YYYY" format
-      if (/^\d{4}-\d{4}$/.test(stu.academic_year)) {
-        yearFolder = `SY ${stu.academic_year}`;
-      }
-      // If just a single year (e.g., "2021")
-      else if (/^\d{4}$/.test(stu.academic_year)) {
-        const start = Number(stu.academic_year);
-        yearFolder = `SY ${start}-${start + 1}`;
-      }
+    // Always normalize to "SY xxxx-xxxx"
+    let rawYear = (stu.academic_year || "").replace(/^SY\s*/, "");
+    if (/^\d{4}-\d{4}$/.test(rawYear)) {
+      yearFolder = `SY ${rawYear}`;
+    } else if (/^\d{4}$/.test(rawYear)) {
+      const start = Number(rawYear);
+      yearFolder = `SY ${start}-${start + 1}`;
     }
 
-    if (!allYearFolders.includes(yearFolder)) return; // skip if not in folders
+    if (!allYearFolders.includes(yearFolder)) return;
 
-    // Use program as the grouping key if present, otherwise department
     const groupKey = stu.program && stu.program !== "" ? stu.program : stu.department;
 
     if (!studentsByYearDept[yearFolder]) {
@@ -348,57 +420,73 @@ const Students = () => {
     studentsByYearDept[yearFolder][groupKey].push(stu);
   });
 
-  // Only show non-archived folders in main view
   const visibleYearFolders = allYearFolders.filter(
     (label) => !archivedYears.includes(label)
   );
 
-  // Add this mapping for subfolders/programs
-  const departmentSubfolders = {
-    "Accountancy": [
-      "Accountancy",
-      "Accounting Information System",
-      "Internal Auditing",
-      "Management Accounting"
-    ],
-    "Business Administration": [
-      "Business Administration Program",
-      "Operation Management",
-      "Financials Management",
-      "Marketing Management",
-      "Human Resource Management"
-    ],
-    "Computer Studies": [
-      "Computer Science",
-      "Information Technology",
-      "Information Technology with special training in Computer Animation",
-      "Diploma in Information Technology",
-      "Library and Information Science",
-      "Entertainment and Multimedia Computing"
-    ],
-    "Engineering Technology": [
-      "Civil Engineering",
-      "Industrial Engineering"
-    ],
-    "Teacher Education": [
-      "Elementary Education",
-      "Early Childhood Education",
-      "Physical Education",
-      "Special Needs Education",
-      "Secondary Education"
-    ]
-    // Add more departments with subfolders if needed
+  const handleDeleteClick = async (student) => {
+    const input = window.prompt(
+      `Type CONFIRM to permanently delete the student "${student.first_name} ${student.last_name}". This cannot be undone.`
+    );
+    if (input && input.trim().toLowerCase() === "confirm") {
+      try {
+        await axios.delete(`/api/students/${student.id}`);
+        setStudents(students.filter(s => s.id !== student.id));
+        setStudentDeleteSuccess(true);
+      } catch (err) {
+        alert("Failed to delete student.");
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (showArchived) {
+      setSelectedYear(null);
+      setSelectedDept(null);
+      setSelectedSubDept(null);
+    }
+  }, [showArchived]);
+
+  const getStudentCountForYear = (label) => {
+    if (studentsByYearDept[label]) {
+      return Object.values(studentsByYearDept[label]).reduce(
+        (sum, arr) => sum + arr.length,
+        0
+      );
+    }
+    return 0;
   };
 
   return (
     <div className="students-root">
+      {/* Success Popups */}
+      {deleteYearSuccess && (
+        <div className="students-success-message delete" style={{ background: "#fee2e2", color: "#b91c1c" }}>
+          School Year folder deleted successfully!
+        </div>
+      )}
+      {studentAddSuccess && (
+        <div className="students-success-message add" style={{ background: "#dcfce7", color: "#15803d" }}>
+          Student added successfully!
+        </div>
+      )}
+      {studentDeleteSuccess && (
+        <div className="students-success-message delete" style={{ background: "#fee2e2", color: "#b91c1c" }}>
+          Student deleted successfully!
+        </div>
+      )}
+      {studentEditSuccess && (
+        <div className="students-success-message edit" style={{ background: "#fef9c3", color: "#b45309" }}>
+          Student updated successfully!
+        </div>
+      )}
+
       <div className="students-banner">
         <div className="students-banner-title">Student Management</div>
         <div className="students-banner-sub">
           FSUU - Manage student records and academic information
         </div>
         <div className="students-banner-actions">
-          {/* Add SY Folder Button */}
           <button
             className="students-banner-add"
             style={{
@@ -419,10 +507,7 @@ const Students = () => {
           </button>
           <button
             className="students-banner-archived"
-            onClick={() => {
-              if (!showArchived) fetchArchivedStudents();
-              setShowArchived(!showArchived);
-            }}
+            onClick={() => setShowArchived(!showArchived)}
           >
             {showArchived ? "Hide Archived" : "Show Archived"}
           </button>
@@ -434,6 +519,7 @@ const Students = () => {
           </button>
         </div>
       </div>
+      
       <div
         style={{
           margin: "32px 0 0 0",
@@ -474,17 +560,9 @@ const Students = () => {
         />
         <div style={{ display: "flex", gap: 12 }}>
           <select
+            className="students-filter-select"
             value={selectedYear || ""}
             onChange={e => setSelectedYear(e.target.value || null)}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              fontWeight: 500,
-              fontSize: "1rem",
-              color: "#2563eb",
-              background: "#f1f5f9"
-            }}
           >
             <option value="">All Years</option>
             {allYearFolders.map((year) => (
@@ -494,17 +572,9 @@ const Students = () => {
             ))}
           </select>
           <select
+            className="students-filter-select all-departments"
             value={selectedDept || ""}
             onChange={e => setSelectedDept(e.target.value || null)}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 8,
-              border: "1px solid #e5e7eb",
-              fontWeight: 500,
-              fontSize: "1rem",
-              color: "#444",
-              background: "#f1f5f9"
-            }}
           >
             <option value="">All Departments</option>
             {departmentOptions.map((dept) => (
@@ -515,161 +585,101 @@ const Students = () => {
           </select>
         </div>
       </div>
+      
       <div className="students-list-card">
-        {/* Success message for adding folder */}
+        {/* Success messages */}
         {addYearSuccess && (
           <div className="students-success-message add">
             School Year folder added successfully!
           </div>
         )}
-        {/* Success message for archiving folder */}
         {archiveYearSuccess && (
           <div className="students-success-message archive">
             School Year folder archived successfully!
           </div>
         )}
-        {/* Success message for restoring folder */}
         {restoreYearSuccess && (
           <div className="students-success-message restore" style={{ background: "#fef9c3", color: "#b45309" }}>
             Folder <b>{restoredYearLabel}</b> has been restored from the archives!
           </div>
         )}
+
         {/* Main Folders UI */}
         {!selectedYear && !showArchived && !isSearchActive && (
           <div className="students-folders-container">
-            <div
-              style={{ display: "flex", gap: "32px", marginBottom: "32px" }}
-            >
-              {visibleYearFolders.slice(0, 4).map((label) => (
-                <div key={label} className="students-folder">
-                  <div
-                    style={{ display: "flex", alignItems: "center", flex: 1 }}
-                    onClick={() => setSelectedYear(label)}
-                  >
-                    <svg
-                      width="32"
-                      height="32"
-                      viewBox="0 0 24 24"
-                      fill="#6366f1"
-                      style={{ marginRight: 16 }}
-                    >
-                      <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
-                    </svg>
-                    {label}
-                  </div>
-                  {/* 3-dot menu */}
-                  <div
-                    style={{ position: "relative" }}
-                    ref={yearMenuOpen === label ? yearMenuRef : null}
-                  >
-                    <button
-                      className="students-folder-menu-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setYearMenuOpen(
-                          yearMenuOpen === label ? null : label
-                        );
-                      }}
+            <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
+              {visibleYearFolders.map((label) => {
+                const total = getStudentCountForYear(label);
+                return (
+                  <div key={label} className="students-folder">
+                    <div
+                      style={{ display: "flex", alignItems: "center", flex: 1 }}
+                      onClick={() => setSelectedYear(label)}
                     >
                       <svg
-                        width="22"
-                        height="22"
+                        width="32"
+                        height="32"
                         viewBox="0 0 24 24"
-                        fill="black"
+                        fill="#6366f1"
+                        style={{ marginRight: 16 }}
                       >
-                        <circle cx="12" cy="5" r="2" />
-                        <circle cx="12" cy="12" r="2" />
-                        <circle cx="12" cy="19" r="2" />
+                        <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
                       </svg>
-                    </button>
-                    {yearMenuOpen === label && (
-                      <div
-                        className="students-folder-menu-dropdown"
-                        onClick={(e) => e.stopPropagation()}
+                      {label}
+                      <span
+                        style={{
+                          marginLeft: 12,
+                          background: "#e0e7ff",
+                          color: "#6366f1",
+                          borderRadius: 8,
+                          padding: "2px 12px",
+                          fontWeight: 600,
+                          fontSize: "1rem",
+                        }}
                       >
-                        <div
-                          className="menu-item"
-                          onClick={() => handleArchiveYear(label)}
-                        >
-                          Archive
-                        </div>
-                        <div
-                          className="menu-item danger"
-                          onClick={() => handleDeleteYear(label)}
-                        >
-                          Delete
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: "32px" }}>
-              {visibleYearFolders.slice(4).map((label) => (
-                <div key={label} className="students-folder">
-                  <div
-                    style={{ display: "flex", alignItems: "center", flex: 1 }}
-                    onClick={() => setSelectedYear(label)}
-                  >
-                    <svg
-                      width="32"
-                      height="32"
-                      viewBox="0 0 24 24"
-                      fill="#6366f1"
-                      style={{ marginRight: 16 }}
+                        {total}
+                      </span>
+                    </div>
+                    <div
+                      style={{ position: "relative" }}
+                      ref={yearMenuOpen === label ? yearMenuRef : null}
                     >
-                      <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
-                    </svg>
-                    {label}
-                  </div>
-                  {/* 3-dot menu */}
-                  <div
-                    style={{ position: "relative" }}
-                    ref={yearMenuOpen === label ? yearMenuRef : null}
-                  >
-                    <button
-                      className="students-folder-menu-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setYearMenuOpen(
-                          yearMenuOpen === label ? null : label
-                        );
-                      }}
-                    >
-                      <svg
-                        width="22"
-                        height="22"
-                        viewBox="0 0 24 24"
-                        fill="black"
+                      <button
+                        className="students-folder-menu-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setYearMenuOpen(yearMenuOpen === label ? null : label);
+                        }}
                       >
-                        <circle cx="12" cy="5" r="2" />
-                        <circle cx="12" cy="12" r="2" />
-                        <circle cx="12" cy="19" r="2" />
-                      </svg>
-                    </button>
-                    {yearMenuOpen === label && (
-                      <div
-                        className="students-folder-menu-dropdown"
-                        onClick={(e) => e.stopPropagation()}
-                      >
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="black">
+                          <circle cx="12" cy="5" r="2" />
+                          <circle cx="12" cy="12" r="2" />
+                          <circle cx="12" cy="19" r="2" />
+                        </svg>
+                      </button>
+                      {yearMenuOpen === label && (
                         <div
-                          className="menu-item"
-                          onClick={() => handleArchiveYear(label)}
+                          className="students-folder-menu-dropdown"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          Archive
+                          <div
+                            className="menu-item"
+                            onClick={() => handleArchiveYear(label)}
+                          >
+                            Archive
+                          </div>
+                          <div
+                            className="menu-item danger"
+                            onClick={() => handleDeleteYear(label)}
+                          >
+                            Delete
+                          </div>
                         </div>
-                        <div
-                          className="menu-item danger"
-                          onClick={() => handleDeleteYear(label)}
-                        >
-                          Delete
-                        </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1000,13 +1010,13 @@ const Students = () => {
                         style={{
                           background:
                             stu.status === "Active"
-                              ? "#22c55e" // green
+                              ? "#22c55e"
                               : stu.status === "Inactive"
-                              ? "#f59e42" // orange
+                              ? "#f59e42"
                               : stu.status === "Graduated"
-                              ? "#6366f1" // blue/violet
+                              ? "#6366f1"
                               : stu.status === "Suspended"
-                              ? "#e11d48" // red
+                              ? "#e11d48"
                               : "#aaa",
                           color:
                             stu.status === "Graduated"
@@ -1029,6 +1039,7 @@ const Students = () => {
                         className="students-action-btn"
                         title="Edit"
                         onClick={() => handleEdit(stu)}
+                        style={{ marginRight: 8 }}
                       >
                         <svg
                           width="18"
@@ -1044,42 +1055,17 @@ const Students = () => {
                       </button>
                       <button
                         className="students-action-btn"
-                        title="Archive"
-                        onClick={() => handleArchive(stu.id)}
+                        title="Delete"
+                        onClick={() => handleDeleteClick(stu)}
+                        style={{ color: "#e11d48" }}
                       >
-                        <svg
-                          width="18"
-                          height="18"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <rect
-                            x="3"
-                            y="4"
-                            width="18"
-                            height="4"
-                            rx="2"
-                            fill="none"
-                            stroke="#222"
+                        <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+                          <path
+                            d="M3 6h18M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6m-6 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"
+                            stroke="#e11d48"
                             strokeWidth="2"
-                          />
-                          <rect
-                            x="7"
-                            y="10"
-                            width="10"
-                            height="8"
-                            rx="2"
-                            fill="none"
-                            stroke="#222"
-                            strokeWidth="2"
-                          />
-                          <line
-                            x1="9"
-                            y1="14"
-                            x2="15"
-                            y2="14"
-                            stroke="#222"
-                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
                           />
                         </svg>
                       </button>
@@ -1116,6 +1102,7 @@ const Students = () => {
             <div className="students-list-table">
               <div className="students-list-header">
                 <div>Student</div>
+                <div>Department/Program</div>
                 <div>Contact</div>
                 <div>Status</div>
                 <div>Last Updated</div>
@@ -1136,6 +1123,21 @@ const Students = () => {
                         </div>
                         <div className="students-list-id">ID: {stu.id}</div>
                       </div>
+                    </div>
+                    <div className="students-list-contact">
+                      <div style={{ fontWeight: 600, color: "#374151", marginBottom: 4 }}>
+                        {stu.department}
+                      </div>
+                      {stu.program && stu.program !== stu.department && (
+                        <div style={{ fontSize: "0.9rem", color: "#6366f1", fontWeight: 500 }}>
+                          {stu.program}
+                        </div>
+                      )}
+                      {stu.academic_year && (
+                        <div style={{ fontSize: "0.85rem", color: "#6b7280", marginTop: 2 }}>
+                          SY {stu.academic_year}
+                        </div>
+                      )}
                     </div>
                     <div className="students-list-contact">
                       <a href={`mailto:${stu.email}`}>{stu.email}</a>
@@ -1173,6 +1175,7 @@ const Students = () => {
                         className="students-action-btn"
                         title="Edit"
                         onClick={() => handleEdit(stu)}
+                        style={{ marginRight: 8 }}
                       >
                         <svg
                           width="18"
@@ -1188,42 +1191,17 @@ const Students = () => {
                       </button>
                       <button
                         className="students-action-btn"
-                        title="Archive"
-                        onClick={() => handleArchive(stu.id)}
+                        title="Delete"
+                        onClick={() => handleDeleteClick(stu)}
+                        style={{ color: "#e11d48" }}
                       >
-                        <svg
-                          width="18"
-                          height="18"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <rect
-                            x="3"
-                            y="4"
-                            width="18"
-                            height="4"
-                            rx="2"
-                            fill="none"
-                            stroke="#222"
+                        <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+                          <path
+                            d="M3 6h18M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6m-6 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"
+                            stroke="#e11d48"
                             strokeWidth="2"
-                          />
-                          <rect
-                            x="7"
-                            y="10"
-                            width="10"
-                            height="8"
-                            rx="2"
-                            fill="none"
-                            stroke="#222"
-                            strokeWidth="2"
-                          />
-                          <line
-                            x1="9"
-                            y1="14"
-                            x2="15"
-                            y2="14"
-                            stroke="#222"
-                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
                           />
                         </svg>
                       </button>
@@ -1244,9 +1222,6 @@ const Students = () => {
             </div>
           </div>
         )}
-
-        {/* Department Folders UI, Subfolders, Students List, etc. */}
-        {/* ...existing code... */}
       </div>
 
       {/* Modal for Add Student */}
@@ -1255,8 +1230,8 @@ const Students = () => {
           <div
             className="students-modal"
             style={{
-              maxWidth: "1100px", // Make the modal much wider
-              width: "90vw",      // Responsive: 90% of viewport width
+              maxWidth: "1100px",
+              width: "90vw",
               minWidth: "700px",
               margin: "40px auto",
               padding: "40px 48px",
@@ -1289,7 +1264,7 @@ const Students = () => {
                   {allYearFolders.map((year) => (
                     <option
                       key={year}
-                      value={year.replace(/^SY\s*/, "")} // value is "2020-2021"
+                      value={year.replace(/^SY\s*/, "")}
                     >
                       {year}
                     </option>
@@ -1474,8 +1449,8 @@ const Students = () => {
           <div
             className="students-modal"
             style={{
-              maxWidth: "1100px", // Make the modal much wider
-              width: "90vw",      // Responsive: 90% of viewport width
+              maxWidth: "1100px",
+              width: "90vw",
               minWidth: "700px",
               margin: "40px auto",
               padding: "40px 48px",
@@ -1488,21 +1463,7 @@ const Students = () => {
               Update student information in FSUU system
             </div>
             <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setLoading(true);
-                setError("");
-                try {
-                  await axios.put(`/api/students/${editId}`, editForm);
-                  const refreshed = await axios.get("/api/students");
-                  setStudents(refreshed.data.students || []);
-                  setEditModal(false);
-                } catch (err) {
-                  setError("Failed to update student.");
-                } finally {
-                  setLoading(false);
-                }
-              }}
+              onSubmit={handleEditSubmit}
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
@@ -1532,9 +1493,9 @@ const Students = () => {
                     <select
                       name={key}
                       value={editForm[key] || ""}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, [key]: e.target.value })
-                      }
+                      onChange={(e) => {
+                        setEditForm({ ...editForm, department: e.target.value, program: "" });
+                      }}
                       required
                     >
                       <option value="">Select Department</option>
@@ -1543,6 +1504,24 @@ const Students = () => {
                           {dept}
                         </option>
                       ))}
+                    </select>
+                  ) : key === "program" ? (
+                    <select
+                      name={key}
+                      value={editForm[key] || ""}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, [key]: e.target.value })
+                      }
+                      required={!!departmentSubfolders[editForm.department]}
+                      disabled={!departmentSubfolders[editForm.department]}
+                    >
+                      <option value="">Select Program</option>
+                      {departmentSubfolders[editForm.department] &&
+                        departmentSubfolders[editForm.department].map((prog) => (
+                          <option key={prog} value={prog}>
+                            {prog}
+                          </option>
+                        ))}
                     </select>
                   ) : key === "status" ? (
                     <select
@@ -1602,7 +1581,7 @@ const Students = () => {
                   type="button"
                   className="students-modal-cancel"
                   onClick={() => setEditModal(false)}
-                  disabled={loading}
+                  disabled={editLoading}
                 >
                   Cancel
                 </button>
@@ -1618,11 +1597,14 @@ const Students = () => {
                     padding: "8px 32px",
                     boxShadow: "2px 2px 8px #0001",
                   }}
-                  disabled={loading}
+                  disabled={editLoading}
                 >
-                  Update Student
+                  {editLoading ? "Updating..." : "Update Student"}
                 </button>
               </div>
+              {error && (
+                <div style={{ color: "#e11d48", marginTop: 8, gridColumn: "1 / span 2" }}>{error}</div>
+              )}
             </form>
           </div>
         </div>
@@ -1652,6 +1634,9 @@ const Students = () => {
                   required
                 />
               </div>
+              {addYearError && (
+                <div style={{ color: "#e11d48", marginBottom: 8 }}>{addYearError}</div>
+              )}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
                 <button
                   type="button"

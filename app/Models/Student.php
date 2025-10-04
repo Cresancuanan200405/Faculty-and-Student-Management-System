@@ -21,5 +21,6 @@ class Student extends Model
         'department',
         'academic_year',
         'status',
+        'program',
     ];
 }

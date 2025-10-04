@@ -6,13 +6,10 @@ use App\Models\Student;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use App\Http\Controllers\StudentController;
 
 // Get all active students
-Route::get('/students', function () {
-    return response()->json([
-        'students' => Student::whereNull('deleted_at')->get()
-    ]);
-});
+Route::get('/students', [StudentController::class, 'index']);
 
 // Get archived students
 Route::get('/students/archived', function () {
@@ -22,23 +19,7 @@ Route::get('/students/archived', function () {
 });
 
 // Add Student
-Route::post('/students', function (Request $request) {
-    $validated = $request->validate([
-        'first_name' => 'required|string|max:255',
-        'last_name' => 'required|string|max:255',
-        'email' => 'required|email|max:255',
-        'gender' => 'required|string|max:10',
-        'birthdate' => 'required|date',
-        'phone' => 'nullable|string|max:20',
-        'course_id' => 'nullable|string|max:50',
-        'department' => 'required|string|max:255',
-        'academic_year' => 'required|string|max:10',
-        'status' => 'required|string|max:20',
-    ]);
-
-    $student = Student::create($validated);
-    return response()->json(['message' => 'Student added successfully', 'student' => $student]);
-});
+Route::post('/students', [StudentController::class, 'store']);
 
 // Register
 Route::post('/register', function (Request $request) {
@@ -76,18 +57,10 @@ Route::post('/login', function (Request $request) {
 });
 
 // Update student
-Route::put('/students/{id}', function (Request $request, $id) {
-    $student = Student::findOrFail($id);
-    $student->update($request->all());
-    return response()->json(['message' => 'Student updated!']);
-});
+Route::put('/students/{id}', [StudentController::class, 'update']);
 
 // Archive (soft delete) student
-Route::delete('/students/{id}', function ($id) {
-    $student = Student::findOrFail($id);
-    $student->delete();
-    return response()->json(['message' => 'Student archived!']);
-});
+Route::delete('/students/{id}', [StudentController::class, 'destroy']);
 
 // Restore archived student
 Route::post('/students/{id}/restore', function ($id) {
