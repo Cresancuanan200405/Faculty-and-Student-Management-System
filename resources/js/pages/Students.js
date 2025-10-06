@@ -9,7 +9,6 @@ const initialState = {
   gender: "",
   birthdate: "",
   phone: "",
-  course_id: "",
   department: "",
   academic_year: "",
   status: "",
@@ -766,7 +765,7 @@ const Students = () => {
                   borderBottom: "1px solid #eee",
                 }}
               >
-                <span>Job Classifications</span>
+                <span>Department</span>
                 <span>Number of Students</span>
               </div>
               {departmentOptions.map((dept) => (
@@ -880,7 +879,7 @@ const Students = () => {
                   borderBottom: "1px solid #eee",
                 }}
               >
-                <span>Program</span>
+                <span>Courses</span>
                 <span>Number of Students</span>
               </div>
               {departmentSubfolders[selectedDept].map((sub) => (
@@ -1370,15 +1369,6 @@ const Students = () => {
                 />
               </div>
               <div className="students-modal-row">
-                <label>Course ID</label>
-                <input
-                  type="text"
-                  name="course_id"
-                  value={form.course_id}
-                  onChange={handleChange}
-                />
-              </div>
-              <div className="students-modal-row">
                 <label>
                   Status <span style={{ color: "#e11d48" }}>*</span>
                 </label>
@@ -1571,7 +1561,7 @@ const Students = () => {
                       onChange={(e) =>
                         setEditForm({ ...editForm, [key]: e.target.value })
                       }
-                      required={key !== "phone" && key !== "course_id"}
+                      required={key !== "phone"}
                     />
                   )}
                 </div>

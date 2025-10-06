@@ -7,12 +7,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use App\Http\Controllers\StudentController;
+use App\Http\Controllers\FacultyController;
+use App\Http\Controllers\CourseController;
 
 // Get all active students
 Route::get('/students', [StudentController::class, 'index']);
 
 // Faculty routes
-use App\Http\Controllers\FacultyController;
 Route::get('/faculty', [FacultyController::class, 'index']);
 Route::post('/faculty', [FacultyController::class, 'store']);
 Route::put('/faculty/{id}', [FacultyController::class, 'update']);
@@ -75,3 +76,5 @@ Route::post('/students/{id}/restore', function ($id) {
     $student->restore();
     return response()->json(['message' => 'Student restored!']);
 });
+
+Route::apiResource('courses', CourseController::class);

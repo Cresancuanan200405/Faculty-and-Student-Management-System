@@ -26,12 +26,12 @@ class StudentController extends Controller
             'academic_year' => 'required',
             'department' => 'required',
             'status' => 'required',
-            'program' => 'nullable|string', // <-- add this line
-            // Add other fields as needed
+            'program' => 'nullable|string',
+            'birthdate' => 'nullable|date',
+            'phone' => 'nullable|string',
         ]);
-        $student = Student::create($validated + $request->only([
-            'birthdate', 'phone', 'course_id'
-        ]));
+
+        $student = Student::create($validated);
         return response()->json(['student' => $student], 201);
     }
 
@@ -47,12 +47,12 @@ class StudentController extends Controller
             'academic_year' => 'required',
             'department' => 'required',
             'status' => 'required',
-            'program' => 'nullable|string', // <-- add this line
-            // Add other fields as needed
+            'program' => 'nullable|string',
+            'birthdate' => 'nullable|date',
+            'phone' => 'nullable|string',
         ]);
-        $student->update($validated + $request->only([
-            'birthdate', 'phone', 'course_id'
-        ]));
+
+        $student->update($validated);
         return response()->json(['student' => $student]);
     }
 

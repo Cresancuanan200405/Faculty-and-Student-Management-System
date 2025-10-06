@@ -20,9 +20,8 @@ class CreateStudentsTable extends Migration
             $table->enum('gender', ['Male', 'Female']);
             $table->date('birthdate');
             $table->string('phone');
-            $table->string('course_id');
             $table->string('department');
-            $table->year('academic_year', 9);
+            $table->string('academic_year', 20); // Changed from year to string
             $table->enum('status', ['Active', 'Inactive', 'Graduated', 'Suspended']);
             $table->string('email')->nullable();
             $table->timestamps();

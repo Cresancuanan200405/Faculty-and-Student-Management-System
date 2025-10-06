@@ -17,7 +17,6 @@ class Student extends Model
         'gender',
         'birthdate',
         'phone',
-        'course_id',
         'department',
         'academic_year',
         'status',
