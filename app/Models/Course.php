@@ -16,7 +16,6 @@ class Course extends Model
         'program',
         'instructor',
         'credits',
-        'semester',
         'academic_year',
         'max_students',
         'status'
@@ -26,4 +25,31 @@ class Course extends Model
         'credits' => 'integer',
         'max_students' => 'integer',
     ];
+
+    // Add relationships
+    public function department()
+    {
+        return $this->belongsTo(Department::class, 'program', 'name');
+    }
+
+    public function students()
+    {
+        return $this->belongsToMany(Student::class, 'course_student');
+    }
+
+    // Scopes
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'Active');
+    }
+
+    public function scopeByProgram($query, $program)
+    {
+        return $query->where('program', $program);
+    }
+
+    public function scopeByAcademicYear($query, $year)
+    {
+        return $query->where('academic_year', $year);
+    }
 }

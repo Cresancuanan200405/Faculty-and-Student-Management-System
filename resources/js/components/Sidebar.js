@@ -31,7 +31,9 @@ const Sidebar = ({ onLogout }) => {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo-area">
-        <img src="/fsuu-logo.png" alt="FSUU Logo" className="sidebar-logo-img" />
+        <div className="sidebar-logo-container">
+          <img src="/images/urios_logo.jpg" alt="FSUU Logo" className="sidebar-logo-img" />
+        </div>
         <div className="sidebar-logo-text">
           <div className="sidebar-logo-title">FSUU</div>
           <div className="sidebar-logo-sub">Academic Management</div>

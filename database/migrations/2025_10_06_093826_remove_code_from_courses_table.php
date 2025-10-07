@@ -14,7 +14,8 @@ return new class extends Migration
     public function up()
     {
         Schema::table('courses', function (Blueprint $table) {
-            $table->dropUnique(['code']); // Drop unique constraint first
+            // Check if unique constraint exists before dropping
+            $table->dropUnique(['code']);
             $table->dropColumn('code');
         });
     }
@@ -27,7 +28,7 @@ return new class extends Migration
     public function down()
     {
         Schema::table('courses', function (Blueprint $table) {
-            $table->string('code')->nullable();
+            $table->string('code')->nullable()->after('name');
         });
     }
 };

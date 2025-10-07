@@ -9,6 +9,17 @@ use Illuminate\Validation\ValidationException;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\FacultyController;
 use App\Http\Controllers\CourseController;
+use App\Http\Controllers\DepartmentController;
+
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+    return $request->user();
+});
 
 // Get all active students
 Route::get('/students', [StudentController::class, 'index']);
@@ -78,3 +89,6 @@ Route::post('/students/{id}/restore', function ($id) {
 });
 
 Route::apiResource('courses', CourseController::class);
+
+// Department routes
+Route::apiResource('departments', DepartmentController::class);
