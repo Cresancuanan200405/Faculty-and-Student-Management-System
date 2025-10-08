@@ -21,59 +21,43 @@ const Departments = () => {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('All Status');
-  const [activeTab, setActiveTab] = useState('Program List');
+  const [activeTab, setActiveTab] = useState('Program Overview');
   const [editingDepartment, setEditingDepartment] = useState(null);
+  const [selectedYear, setSelectedYear] = useState(null);
+  const [selectedDept, setSelectedDept] = useState(null);
+  const [programFolders, setProgramFolders] = useState([]);
+  const [coursesData, setCoursesData] = useState([]);
+  const [selectedSubDept, setSelectedSubDept] = useState(null);
 
+  // Fetch departments
   const loadDepartments = async () => {
     try {
-      setLoading(true);
-      const params = {};
-      if (search.trim()) params.search = search.trim();
-      if (filterStatus !== 'All Status') params.status = filterStatus;
-      
-      const { data } = await axios.get('/api/departments', { params });
+      const { data } = await axios.get('/api/departments');
       setDepartments(data.departments || []);
-      setFetchError('');
     } catch (err) {
       console.error('Failed to fetch departments:', err);
-      setFetchError('Failed to load departments');
-    } finally { 
-      setLoading(false); 
     }
   };
 
-  const loadStudents = async () => {
-    try {
-      const { data } = await axios.get('/api/students');
-      setStudents(data.students || []);
-    } catch (err) {
-      console.error('Failed to fetch students:', err);
-    }
-  };
-
-  const loadFaculty = async () => {
-    try {
-      const { data } = await axios.get('/api/faculty');
-      setFaculty(data.faculty || []);
-    } catch (err) {
-      console.error('Failed to fetch faculty:', err);
-    }
-  };
-
+  // Fetch courses
   const loadCourses = async () => {
     try {
+      setLoading(true);
       const { data } = await axios.get('/api/courses');
-      setCourses(data.data || []);
+      setCourses(data.courses || []);
+      setFetchError('');
     } catch (err) {
       console.error('Failed to fetch courses:', err);
+      setFetchError('Failed to load courses');
+    } finally {
+      setLoading(false);
     }
   };
 
-  useEffect(() => { 
-    loadDepartments(); 
-    loadStudents();
-    loadFaculty();
+  useEffect(() => {
+    loadDepartments();
     loadCourses();
+    // Optionally, you can add an event listener here to refresh courses after course creation.
   }, []);
   
   useEffect(() => { 
@@ -276,7 +260,7 @@ const Departments = () => {
               />
             </div>
             <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-              <option>All Programs</option>
+              <option>All Status</option>
               <option>Active</option>
               <option>Inactive</option>
             </select>
@@ -359,65 +343,164 @@ const Departments = () => {
             </div>
           </div>
           
-          <div className="department-cards-grid">
-            {filtered.map((dept) => (
-              <div key={dept.id} className="department-overview-card">
-                <div className="department-card-header">
-                  <div className="department-card-title-section">
-                    <h3 className="department-card-title">{dept.name}</h3>
-                    <div className="department-card-description">{dept.description}</div>
+          {loading ? (
+            <p>Loading courses...</p>
+          ) : fetchError ? (
+            <p style={{ color: '#e11d48' }}>{fetchError}</p>
+          ) : (
+            <div className="department-cards-grid">
+              {filtered.map((dept) => {
+                // Normalize both values to compare
+                const deptCourses = courses.filter(
+                  (course) =>
+                    course.program &&
+                    course.program.trim().toLowerCase() === dept.name.trim().toLowerCase()
+                );
+                return (
+                  <div key={dept.id} className="department-overview-card">
+                    <div className="department-card-header">
+                      <div className="department-card-title-section">
+                        <h3 className="department-card-title">{dept.name}</h3>
+                        <div className="department-card-description">{dept.description}</div>
+                      </div>
+                      <span className={`department-status-badge ${dept.status.toLowerCase()}`}>
+                        {dept.status}
+                      </span>
+                    </div>
+
+                    {/* Display courses for this department/program */}
+                    <div className="department-courses-list" style={{ marginTop: 16 }}>
+                      <h4 style={{ marginBottom: 8 }}>Courses</h4>
+                      {deptCourses.length > 0 ? (
+                        <ul className="courses-list" style={{ paddingLeft: 20 }}>
+                          {deptCourses.map(course => (
+                            <li key={course.id} style={{ marginBottom: 4 }}>
+                              {course.name}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p style={{ fontStyle: 'italic', color: '#888' }}>
+                          No courses found for this program.
+                        </p>
+                      )}
+                    </div>
+                    
+                    {/* ...Other department details and actions... */}
                   </div>
-                  <span className={`department-status-badge ${dept.status.toLowerCase()}`}>
-                    {dept.status}
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Yearly View Section */}
+      {selectedYear && selectedDept && !selectedSubDept && (
+        <div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 8,
+            }}
+          >
+            <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>
+              {selectedDept}{" "}
+              <span style={{ fontWeight: 400, color: "#888" }}>
+                ({selectedYear})
+              </span>
+            </div>
+            <button
+              style={{
+                background: "#eee",
+                border: "none",
+                borderRadius: 8,
+                padding: "8px 20px",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+              onClick={() => setSelectedDept(null)}
+            >
+              Back to Departments
+            </button>
+          </div>
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "16px",
+              boxShadow: "0 2px 8px #0001",
+              padding: "0",
+              marginTop: "16px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "20px 32px 12px 32px",
+                fontWeight: 600,
+                fontSize: "1.1rem",
+                borderBottom: "1px solid #eee",
+              }}
+            >
+              <span>Programs</span>
+              <span>Courses Count</span>
+            </div>
+            {programFolders.map((programName) => {
+              // Filter courses for this program (normalize strings for comparison)
+              const coursesForProgram = coursesData.filter(
+                (course) =>
+                  course.program &&
+                  course.program.trim().toLowerCase() === programName.trim().toLowerCase()
+              );
+              return (
+                <div
+                  key={programName}
+                  className="students-folder"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    cursor: "pointer",
+                    padding: "18px 32px",
+                    borderBottom: "1px solid #eee",
+                    background: "#fff",
+                    fontWeight: 500,
+                    fontSize: "1.08rem",
+                    transition: "background 0.2s",
+                  }}
+                  onClick={() => setSelectedSubDept(programName)}
+                >
+                  <div style={{ display: "flex", alignItems: "center" }}>
+                    <svg
+                      width="28"
+                      height="28"
+                      viewBox="0 0 24 24"
+                      fill="#6366f1"
+                      style={{ marginRight: 14 }}
+                    >
+                      <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
+                    </svg>
+                    {programName}
+                  </div>
+                  <span
+                    style={{
+                      color: "#6366f1",
+                      background: "#e0e7ff",
+                      borderRadius: 8,
+                      padding: "2px 16px",
+                      fontSize: "1rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {coursesForProgram.length}
                   </span>
                 </div>
-
-                <div className="department-stats-row">
-                  <div className="department-stat">
-                    <div className="department-stat-number students">{dept.student_count}</div>
-                    <div className="department-stat-label">Students</div>
-                  </div>
-                  <div className="department-stat">
-                    <div className="department-stat-number faculty">{dept.faculty_count}</div>
-                    <div className="department-stat-label">Faculty</div>
-                  </div>
-                  <div className="department-stat">
-                    <div className="department-stat-number courses">{dept.course_count}</div>
-                    <div className="department-stat-label">Courses</div>
-                  </div>
-                </div>
-
-                <div className="department-details-section">
-                  <div className="department-detail-row">
-                    <span className="department-detail-label">Budget:</span>
-                    <span className="department-detail-value">${((parseFloat(dept.budget) || 0) / 1000000).toFixed(1)}M</span>
-                  </div>
-                </div>
-
-                <div className="department-card-actions">
-                  <button 
-                    className="department-action-btn edit"
-                    onClick={() => editDepartment(dept)}
-                    title="Edit department"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
-                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                    Edit
-                  </button>
-                  <button 
-                    className="department-action-btn delete"
-                    onClick={() => deleteDepartment(dept.id)}
-                    title="Delete department"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
-                      <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

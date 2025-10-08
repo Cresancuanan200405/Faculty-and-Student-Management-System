@@ -1,6 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import axios from "../axios";
 import "../../sass/Students.scss";
+
+// Banner image (placed in public/images/Student_Manager.png)
+const STUDENT_BANNER_IMG = "/images/Student_Manager.png";
 
 const initialState = {
   first_name: "",
@@ -14,18 +17,6 @@ const initialState = {
   status: "",
   program: "",
 };
-
-const departmentOptions = [
-  "Arts and Sciences",
-  "Accountancy",
-  "Business Administration",
-  "Criminal Justice Education",
-  "Computer Studies",
-  "Engineering Technology",
-  "Law",
-  "Nursing",
-  "Teacher Education",
-];
 
 const yearFolders = [
   "SY 2020-2021",
@@ -85,6 +76,8 @@ const Students = () => {
   const [selectedYear, setSelectedYear] = useState(null);
   const [selectedDept, setSelectedDept] = useState(null);
   const [selectedSubDept, setSelectedSubDept] = useState(null);
+  // NEW: track selected course
+  const [selectedCourse, setSelectedCourse] = useState(null);
   const [editLoading, setEditLoading] = useState(false);
   const [customYears, setCustomYears] = useState(() => {
     const saved = localStorage.getItem("customYears");
@@ -107,6 +100,16 @@ const Students = () => {
   const [studentAddSuccess, setStudentAddSuccess] = useState(false);
   const [studentDeleteSuccess, setStudentDeleteSuccess] = useState(false);
   const [studentEditSuccess, setStudentEditSuccess] = useState(false);
+  const [departmentsData, setDepartmentsData] = useState([]);
+  const [coursesData, setCoursesData] = useState([]);
+  // NEW: course selection popup state
+  const [showCourseSelectModal, setShowCourseSelectModal] = useState(false);
+  const [pendingDeptCourses, setPendingDeptCourses] = useState([]);
+  const courseModalWasShownRef = useRef(false);
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [archiveTargetYear, setArchiveTargetYear] = useState(null);
+  const [archiveConfirmText, setArchiveConfirmText] = useState("");
+  const [archiveInProgress, setArchiveInProgress] = useState(false);
 
   const allYearFolders = [...yearFolders, ...customYears];
 
@@ -180,6 +183,43 @@ const Students = () => {
     fetchStudents();
   }, []);
 
+  // fetching departments data from Departments endpoint
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const res = await axios.get("/api/departments");
+        setDepartmentsData(res.data.departments || []);
+      } catch (err) {
+        console.error("Failed to load departments", err);
+      }
+    };
+    fetchDepartments();
+  }, []);
+
+  // Fetch courses (reusable so we can refresh on external events)
+  const fetchCourses = useCallback(async () => {
+    try {
+      const res = await axios.get("/api/courses");
+      setCoursesData(res.data.courses || []);
+    } catch (err) {
+      console.error("Failed to load courses", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCourses();
+    // Listen to course events fired from Courses.js
+    const handleCourseChange = () => fetchCourses();
+    window.addEventListener("courseAdded", handleCourseChange);
+    window.addEventListener("courseUpdated", handleCourseChange);
+    window.addEventListener("courseDeleted", handleCourseChange);
+    return () => {
+      window.removeEventListener("courseAdded", handleCourseChange);
+      window.removeEventListener("courseUpdated", handleCourseChange);
+      window.removeEventListener("courseDeleted", handleCourseChange);
+    };
+  }, [fetchCourses]);
+
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
@@ -208,17 +248,29 @@ const Students = () => {
       setError("Birthdate cannot be in the future.");
       return;
     }
+
     const submitData = { ...form };
     // Remove "SY " prefix if present
     if (submitData.academic_year.startsWith("SY ")) {
       submitData.academic_year = submitData.academic_year.replace(/^SY\s*/, "");
     }
-    if (!departmentSubfolders[form.department]) {
+    // Preserve program if user selected one (e.g. from dynamic Courses API)
+    if (!departmentSubfolders[form.department] && !submitData.program) {
       delete submitData.program;
     }
     setLoading(true);
     try {
+      // Add student
       const res = await axios.post("/api/students", submitData);
+
+      // After a student is added, fetch the latest departments and courses
+      const depRes = await axios.get("/api/departments");
+      setDepartmentsData(depRes.data.departments || []);
+
+      const courseRes = await axios.get("/api/courses");
+      setCoursesData(courseRes.data.courses || []);
+
+      // Update students list with the new student
       setStudents((prev) => [
         ...(prev || []),
         res.data.student || submitData
@@ -237,8 +289,7 @@ const Students = () => {
         );
       } else {
         setError(
-          err.response?.data?.message ||
-          "Failed to add student."
+          err.response?.data?.message || "Failed to add student."
         );
       }
     }
@@ -337,6 +388,37 @@ const Students = () => {
       setCustomYears((prev) => prev.filter((y) => y !== label));
       setYearMenuOpen(null);
       setDeleteYearSuccess(true);
+    }
+  };
+
+  const archiveYear = (year) => {
+    setArchivedYears(prev => {
+      if (prev.includes(year)) return prev;
+      const updated = [...prev, year];
+      try {
+        localStorage.setItem("archivedYears", JSON.stringify(updated));
+      } catch (_) {}
+      return updated;
+    });
+    setArchiveYearSuccess(true);
+    setTimeout(() => setArchiveYearSuccess(false), 3000);
+  };
+
+  const requestArchiveYear = (year) => {
+    setArchiveTargetYear(year);
+    setArchiveConfirmText("");
+    setShowArchiveConfirm(true);
+  };
+
+  const confirmArchiveYear = async () => {
+    if (archiveConfirmText !== "Archive" || !archiveTargetYear) return;
+    setArchiveInProgress(true);
+    try {
+      archiveYear(archiveTargetYear);
+    } finally {
+      setArchiveInProgress(false);
+      setShowArchiveConfirm(false);
+      setArchiveTargetYear(null);
     }
   };
 
@@ -456,6 +538,58 @@ const Students = () => {
     return 0;
   };
 
+  // NEW: helper to normalize SY labels
+  const normalizeYearLabel = (raw) => {
+    if (!raw) return "";
+    let yr = raw.replace(/^SY\s*/i, "");
+    if (/^\d{4}-\d{4}$/.test(yr)) return `SY ${yr}`;
+    if (/^\d{4}$/.test(yr)) {
+      const s = Number(yr);
+      return `SY ${s}-${s + 1}`;
+    }
+    return raw.startsWith("SY ") ? raw : `SY ${yr}`;
+  };
+
+  // NEW: Memo list of courses belonging to currently selected department
+  const coursesForSelectedDept = useMemo(() => {
+    if (!selectedDept || !coursesData || coursesData.length === 0) return [];
+    const deptLower = selectedDept.trim().toLowerCase();
+    return coursesData.filter(c => {
+      const prog = (c.program || "").trim().toLowerCase();
+      const dept = (c.department || "").trim().toLowerCase();
+      return prog === deptLower || dept === deptLower;
+    });
+  }, [coursesData, selectedDept]);
+
+  const availablePrograms = useMemo(() => {
+    if (!form.department) return [];
+    // Filter the courses that belong to this department.
+    const deptLower = form.department.trim().toLowerCase();
+    const programs = coursesData
+      .filter(course =>
+        ((course.department || course.program || "").trim().toLowerCase()) === deptLower
+      )
+      .map(course => (course.name || course.program || "").trim())
+      .filter(Boolean);
+    return Array.from(new Set(programs)); // Unique programs only.
+  }, [coursesData, form.department]);
+
+  // Auto-open popup once courses load for a selected department (covers late-added courses)
+  useEffect(() => {
+    if (!form.department) return;
+    if (departmentSubfolders[form.department]) return; // static programs handled separately
+    const deptLower = form.department.trim().toLowerCase();
+    const matches = coursesData.filter(c =>
+      ((c.department || c.program || "").trim().toLowerCase()) === deptLower
+    );
+    // Only open if there are matches, program not yet chosen, and we haven't shown it for this dept.
+    if (matches.length > 0 && !form.program && !courseModalWasShownRef.current) {
+      setPendingDeptCourses(matches);
+      setShowCourseSelectModal(true);
+      courseModalWasShownRef.current = true;
+    }
+  }, [coursesData, form.department, form.program]);
+
   return (
     <div className="students-root">
       {/* Success Popups */}
@@ -479,45 +613,198 @@ const Students = () => {
           Student updated successfully!
         </div>
       )}
+      {archiveYearSuccess && (
+        <div
+          style={{
+            position: "fixed",
+            top: 20,
+            right: 20,
+            background: "#047857",
+            color: "#fff",
+            padding: "10px 18px",
+            borderRadius: 10,
+            fontSize: 14,
+            boxShadow: "0 4px 14px rgba(0,0,0,.15)",
+            zIndex: 3000
+          }}
+        >
+          Folder archived successfully.
+        </div>
+      )}
+
+      {/* Archive confirmation modal */}
+      {showArchiveConfirm && (
+        <div
+          className="students-modal-bg"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2500
+          }}
+          onClick={() => !archiveInProgress && setShowArchiveConfirm(false)}
+        >
+          <div
+            className="students-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              width: "100%",
+              maxWidth: 440,
+              padding: "32px 36px",
+              borderRadius: 22,
+              boxShadow: "0 8px 28px rgba(0,0,0,.18)"
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>Archive School Year Folder</h3>
+            <div style={{ fontSize: 14, lineHeight: 1.5, color: "#374151", marginBottom: 18 }}>
+              
+              <br />
+              <b>{archiveTargetYear}</b>
+              <br />
+              
+              <br />
+              Type <code style={{ background: "#f3f4f6", padding: "2px 4px", borderRadius: 4 }}>Archive</code> to confirm.
+            </div>
+            <input
+              autoFocus
+              type="text"
+              placeholder='Type "Archive" to confirm'
+              value={archiveConfirmText}
+              onChange={(e) => setArchiveConfirmText(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #d1d5db",
+                marginBottom: 20,
+                fontSize: 14
+              }}
+              disabled={archiveInProgress}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setShowArchiveConfirm(false)}
+                disabled={archiveInProgress}
+                style={{
+                  background: "#e5e7eb",
+                  border: "none",
+                  padding: "8px 18px",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor: archiveInProgress ? "not-allowed" : "pointer"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmArchiveYear}
+                disabled={archiveConfirmText !== "Archive" || archiveInProgress}
+                style={{
+                  background:
+                    archiveConfirmText === "Archive" && !archiveInProgress
+                      ? "#dc2626"
+                      : "#fca5a5",
+                  color: "#fff",
+                  border: "none",
+                  padding: "8px 22px",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor:
+                    archiveConfirmText === "Archive" && !archiveInProgress
+                      ? "pointer"
+                      : "not-allowed"
+                }}
+              >
+                {archiveInProgress ? "Archiving..." : "Archive"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="students-banner">
-        <div className="students-banner-title">Student Management</div>
-        <div className="students-banner-sub">
-          FSUU - Manage student records and academic information
-        </div>
-        <div className="students-banner-actions">
-          <button
-            className="students-banner-add"
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 18,
+            flexWrap: "wrap",
+            flex: 1
+          }}
+        >
+          <div
+            className="students-banner-icon"
             style={{
-              background: "linear-gradient(90deg,#6366f1,#7c3aed)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 20,
-              padding: "8px 28px",
-              fontWeight: 600,
-              marginRight: 16,
-              fontSize: "1rem",
-              boxShadow: "0 2px 8px #0001",
-              transition: "box-shadow 0.2s",
+              width: 64,
+              height: 64,
+              background: "#f59e0b",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 2px 6px #0002",
+              overflow: "hidden",
+              flexShrink: 0,
             }}
-            onClick={() => setShowAddYearModal(true)}
           >
-            + Add SY Folder
-          </button>
-          <button
-            className="students-banner-archived"
-            onClick={() => setShowArchived(!showArchived)}
-          >
-            {showArchived ? "Hide Archived" : "Show Archived"}
-          </button>
-          <button
-            className="students-banner-add"
-            onClick={() => setShowModal(true)}
-          >
-            + Add Student
-          </button>
+            <img
+              src={STUDENT_BANNER_IMG}
+              alt="Student Management"
+              style={{ width: "70%", height: "70%", objectFit: "contain" }}
+              onError={(e) => {
+                // Hide image container if not found
+                e.currentTarget.parentElement.style.display = "none";
+              }}
+            />
+          </div>
+          <div style={{ minWidth: 200 }}>
+            <div className="students-banner-title" style={{ marginBottom: 4 }}>
+              Student Management
+            </div>
+            <div className="students-banner-sub" style={{ lineHeight: 1.25 }}>
+              FSUU - Manage student records and academic information
+            </div>
+          </div>
         </div>
-      </div>
+        <div className="students-banner-actions" style={{ marginLeft: "auto" }}>
+           <button
+             className="students-banner-add"
+             style={{
+               background: "linear-gradient(90deg,#6366f1,#7c3aed)",
+               color: "#fff",
+               border: "none",
+               borderRadius: 20,
+               padding: "8px 28px",
+               fontWeight: 600,
+               marginRight: 16,
+               fontSize: "1rem",
+               boxShadow: "0 2px 8px #0001",
+               transition: "box-shadow 0.2s",
+             }}
+             onClick={() => setShowAddYearModal(true)}
+           >
+             + Add SY Folder
+           </button>
+           <button
+             className="students-banner-archived"
+             onClick={() => setShowArchived(!showArchived)}
+           >
+             {showArchived ? "Hide Archived" : "Show Archived"}
+           </button>
+           <button
+             className="students-banner-add"
+             onClick={() => setShowModal(true)}
+           >
+             + Add Student
+           </button>
+         </div>
+       </div>
       
       <div
         style={{
@@ -576,9 +863,9 @@ const Students = () => {
             onChange={e => setSelectedDept(e.target.value || null)}
           >
             <option value="">All Departments</option>
-            {departmentOptions.map((dept) => (
-              <option key={dept} value={dept}>
-                {dept}
+            {departmentsData.map(dept => (
+              <option key={dept.id} value={dept.name}>
+                {dept.name}
               </option>
             ))}
           </select>
@@ -663,7 +950,7 @@ const Students = () => {
                         >
                           <div
                             className="menu-item"
-                            onClick={() => handleArchiveYear(label)}
+                            onClick={() => requestArchiveYear(label)}
                           >
                             Archive
                           </div>
@@ -744,95 +1031,92 @@ const Students = () => {
                 Back
               </button>
             </div>
-            {/* Department folders in a vertical list with header */}
             <div
               style={{
                 background: "#fff",
                 borderRadius: "16px",
                 boxShadow: "0 2px 8px #0001",
-                padding: "0",
+                padding: "16px",
                 marginTop: "16px",
               }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "20px 32px 12px 32px",
-                  fontWeight: 600,
-                  fontSize: "1.1rem",
-                  borderBottom: "1px solid #eee",
-                }}
-              >
-                <span>Department</span>
-                <span>Number of Students</span>
-              </div>
-              {departmentOptions.map((dept) => (
-                <div
-                  key={dept}
-                  className="students-folder"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    cursor: "pointer",
-                    padding: "18px 32px",
-                    borderBottom: "1px solid #eee",
-                    background: "#fff",
-                    fontWeight: 500,
-                    fontSize: "1.08rem",
-                    transition: "background 0.2s",
-                  }}
-                  onClick={() => setSelectedDept(dept)}
-                >
-                  <div style={{ display: "flex", alignItems: "center" }}>
-                    <svg
-                      width="28"
-                      height="28"
-                      viewBox="0 0 24 24"
-                      fill="#6366f1"
-                      style={{ marginRight: 14 }}
-                    >
-                      <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
-                    </svg>
-                    {dept}
-                  </div>
-                  <span
-                    style={{
-                      color: "#6366f1",
-                      background: "#e0e7ff",
-                      borderRadius: 8,
-                      padding: "2px 16px",
-                      fontSize: "1rem",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {
-                      departmentSubfolders[dept]
-                        ? departmentSubfolders[dept].reduce(
-                            (sum, prog) =>
-                              sum +
-                              ((studentsByYearDept[selectedYear] &&
-                                studentsByYearDept[selectedYear][prog])
-                                ? studentsByYearDept[selectedYear][prog].length
-                                : 0),
-                            0
-                          )
-                        : (studentsByYearDept[selectedYear] &&
-                            studentsByYearDept[selectedYear][dept])
-                        ? studentsByYearDept[selectedYear][dept].length
-                        : 0
-                    }
-                  </span>
+              {departmentsData.length === 0 ? (
+                <div style={{ padding: 32, textAlign: "center", color: "#888" }}>
+                  No departments found.
                 </div>
-              ))}
+              ) : (
+                departmentsData.map((dept) => {
+                  // Compute the student count for this department within the selected school year.
+                  const countForDept = students.filter((stu) => {
+                    let stuYear = stu.academic_year || "";
+                    // Normalize the academic_year to a "SY xxxx-xxxx" format.
+                    if (!stuYear.startsWith("SY ")) {
+                      stuYear = `SY ${stuYear}`;
+                    }
+                    return (
+                      stu.department.trim().toLowerCase() === dept.name.trim().toLowerCase() &&
+                      stuYear === selectedYear
+                    );
+                  }).length;
+
+                  return (
+                    <div
+                      key={dept.id}
+                      className="students-folder"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        marginBottom: 16,
+                        padding: "12px 16px",
+                        border: "1px solid #eee",
+                        borderRadius: 8,
+                        background: "#fafafa",
+                        cursor: "pointer",
+                      }}
+                      onClick={() => setSelectedDept(dept.name)}
+                    >
+                      <svg
+                        width="32"
+                        height="32"
+                        viewBox="0 0 24 24"
+                        fill="#6366f1"
+                        style={{ marginRight: 16 }}
+                      >
+                        <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
+                      </svg>
+                      <div style={{ flex: 1, fontWeight: 600 }}>
+                        {dept.name}
+                      </div>
+                      {/* Badge Indicator for student count */}
+                      <span
+                        style={{
+                          background: "#e0e7ff",
+                          color: "#6366f1",
+                          borderRadius: 8,
+                          padding: "2px 12px",
+                          fontWeight: 600,
+                          fontSize: "1rem",
+                        }}
+                      >
+                        {countForDept}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         )}
 
-        {/* Subfolders for departments with programs */}
-        {selectedYear && departmentSubfolders[selectedDept] && !selectedSubDept && (
+        {/*
+          Unified Department Children (Courses first, fallback to predefined programs)
+          Show ONLY if there are courses or predefined program subfolders.
+        */}
+        {selectedYear &&
+          selectedDept &&
+          !selectedSubDept &&
+          !selectedCourse &&
+          (coursesForSelectedDept.length > 0 || departmentSubfolders[selectedDept]) && (
           <div>
             <div
               style={{
@@ -843,114 +1127,7 @@ const Students = () => {
               }}
             >
               <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>
-                {selectedDept} <span style={{ fontWeight: 400, color: "#888" }}>({selectedYear})</span>
-              </div>
-              <button
-                style={{
-                  background: "#eee",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "8px 20px",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                }}
-                onClick={() => setSelectedDept(null)}
-              >
-                Back to Departments
-              </button>
-            </div>
-            <div
-              style={{
-                background: "#fff",
-                borderRadius: "16px",
-                boxShadow: "0 2px 8px #0001",
-                padding: "0",
-                marginTop: "16px",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "20px 32px 12px 32px",
-                  fontWeight: 600,
-                  fontSize: "1.1rem",
-                  borderBottom: "1px solid #eee",
-                }}
-              >
-                <span>Courses</span>
-                <span>Number of Students</span>
-              </div>
-              {departmentSubfolders[selectedDept].map((sub) => (
-                <div
-                  key={sub}
-                  className="students-folder"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    cursor: "pointer",
-                    padding: "18px 32px",
-                    borderBottom: "1px solid #eee",
-                    background: "#fff",
-                    fontWeight: 500,
-                    fontSize: "1.08rem",
-                    transition: "background 0.2s",
-                  }}
-                  onClick={() => setSelectedSubDept(sub)}
-                >
-                  <div style={{ display: "flex", alignItems: "center" }}>
-                    <svg
-                      width="28"
-                      height="28"
-                      viewBox="0 0 24 24"
-                      fill="#6366f1"
-                      style={{ marginRight: 14 }}
-                    >
-                      <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
-                    </svg>
-                    {sub}
-                  </div>
-                  <span
-                    style={{
-                      color: "#6366f1",
-                      background: "#e0e7ff",
-                      borderRadius: 8,
-                      padding: "2px 16px",
-                      fontSize: "1rem",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {
-                      (studentsByYearDept[selectedYear] &&
-                        studentsByYearDept[selectedYear][sub])
-                        ? studentsByYearDept[selectedYear][sub].length
-                        : 0
-                    }
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Students List for selected year & department or subdepartment */}
-        {selectedYear && (
-          (!departmentSubfolders[selectedDept] && selectedDept) ||
-          selectedSubDept
-        ) && (
-          <div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 8,
-              }}
-            >
-              <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>
-                {(selectedSubDept || selectedDept)}{" "}
+                {selectedDept}{" "}
                 <span style={{ fontWeight: 400, color: "#888" }}>
                   ({selectedYear})
                 </span>
@@ -965,14 +1142,214 @@ const Students = () => {
                   fontWeight: 600,
                 }}
                 onClick={() => {
-                  if (selectedSubDept) setSelectedSubDept(null);
+                  setSelectedDept(null);
+                  setSelectedSubDept(null);
+                  setSelectedCourse(null);
+                }}
+              >
+                Back to Departments
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: "#fff",
+                borderRadius: "16px",
+                boxShadow: "0 2px 8px #0001",
+                padding: 0,
+                marginTop: 16,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "20px 32px 12px 32px",
+                  fontWeight: 600,
+                  fontSize: "1.1rem",
+                  borderBottom: "1px solid #eee",
+                }}
+              >
+                <span>
+                  {coursesForSelectedDept.length > 0 ? "Courses" : "Programs"}
+                </span>
+                <span>Number of Students</span>
+              </div>
+
+              {/* COURSES LIST (if any) */}
+              {coursesForSelectedDept.length > 0 &&
+                coursesForSelectedDept.map(course => {
+                  const courseName = course.name || "Untitled Course";
+                  const count = students.filter(stu => {
+                    const stuYear = normalizeYearLabel(stu.academic_year);
+                    return (
+                      stuYear === selectedYear &&
+                      (stu.program || "").trim().toLowerCase() ===
+                        courseName.trim().toLowerCase()
+                    );
+                  }).length;
+                  return (
+                    <div
+                      key={course.id || courseName}
+                      className="students-folder"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        cursor: "pointer",
+                        padding: "18px 32px",
+                        borderBottom: "1px solid #eee",
+                        background: "#fff",
+                        fontWeight: 500,
+                        fontSize: "1.05rem",
+                        transition: "background 0.2s",
+                      }}
+                      onClick={() => setSelectedCourse(courseName)}
+                    >
+                      <div style={{ display: "flex", alignItems: "center" }}>
+                        <svg
+                          width="28"
+                          height="28"
+                          viewBox="0 0 24 24"
+                          fill="#6366f1"
+                          style={{ marginRight: 14 }}
+                        >
+                          <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
+                        </svg>
+                        {courseName}
+                      </div>
+                      <span
+                        style={{
+                          color: "#6366f1",
+                          background: "#e0e7ff",
+                          borderRadius: 8,
+                          padding: "2px 16px",
+                          fontSize: "0.95rem",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {count}
+                      </span>
+                    </div>
+                  );
+                })}
+
+              {/* FALLBACK PROGRAM SUBFOLDERS (only if no courses) */}
+              {coursesForSelectedDept.length === 0 &&
+                departmentSubfolders[selectedDept] &&
+                departmentSubfolders[selectedDept].map(prog => {
+                  const count =
+                    (studentsByYearDept[selectedYear] &&
+                      studentsByYearDept[selectedYear][prog])
+                      ? studentsByYearDept[selectedYear][prog].length
+                      : 0;
+                  return (
+                    <div
+                      key={prog}
+                      className="students-folder"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        cursor: "pointer",
+                        padding: "18px 32px",
+                        borderBottom: "1px solid #eee",
+                        background: "#fff",
+                        fontWeight: 500,
+                        fontSize: "1.05rem",
+                        transition: "background 0.2s",
+                      }}
+                      onClick={() => setSelectedSubDept(prog)}
+                    >
+                      <div style={{ display: "flex", alignItems: "center" }}>
+                        <svg
+                          width="28"
+                          height="28"
+                          viewBox="0 0 24 24"
+                          fill="#6366f1"
+                          style={{ marginRight: 14 }}
+                        >
+                          <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
+                        </svg>
+                        {prog}
+                      </div>
+                      <span
+                        style={{
+                          color: "#6366f1",
+                          background: "#e0e7ff",
+                          borderRadius: 8,
+                          padding: "2px 16px",
+                          fontSize: "0.95rem",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {count}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
+        {/* Students List (Department without programs, a Program, or a Course) */}
+        {selectedYear && (
+          (
+            // If a course is chosen
+            selectedCourse ||
+            // If a program(subdept) chosen
+            selectedSubDept ||
+            // If department has neither courses nor predefined subfolders (show dept-level students)
+            (selectedDept &&
+              !selectedCourse &&
+              !selectedSubDept &&
+              coursesForSelectedDept.length === 0 &&
+              !departmentSubfolders[selectedDept])
+          )
+        ) && (
+          <div style={{ marginTop: 32 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>
+                {selectedCourse
+                  ? `Course: ${selectedCourse}`
+                  : selectedSubDept
+                  ? selectedSubDept
+                  : selectedDept}{" "}
+                <span style={{ fontWeight: 400, color: "#888" }}>
+                  ({selectedYear})
+                </span>
+              </div>
+              <button
+                style={{
+                  background: "#eee",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 20px",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+                onClick={() => {
+                  if (selectedCourse) setSelectedCourse(null);
+                  else if (selectedSubDept) setSelectedSubDept(null);
                   else setSelectedDept(null);
                 }}
               >
-                {selectedSubDept ? "Back to Programs" : "Back to Departments"}
+                {selectedCourse
+                  ? "Back to Courses"
+                  : selectedSubDept
+                  ? "Back to Programs"
+                  : "Back to Departments"}
               </button>
             </div>
-            {/* Students Table */}
+
             <div className="students-list-table">
               <div className="students-list-header">
                 <div>Student</div>
@@ -981,10 +1358,117 @@ const Students = () => {
                 <div>Last Updated</div>
                 <div>Actions</div>
               </div>
-              {(studentsByYearDept[selectedYear] &&
-                studentsByYearDept[selectedYear][selectedSubDept || selectedDept] &&
-                studentsByYearDept[selectedYear][selectedSubDept || selectedDept].length > 0) ? (
-                studentsByYearDept[selectedYear][selectedSubDept || selectedDept].map((stu) => (
+
+              {(() => {
+                // COURSE VIEW
+                if (selectedCourse) {
+                  const list = filteredStudents.filter(stu => {
+                    const stuYear = normalizeYearLabel(stu.academic_year);
+                    return (
+                      stuYear === selectedYear &&
+                      (stu.program || "").trim().toLowerCase() ===
+                        selectedCourse.trim().toLowerCase()
+                    );
+                  });
+                  if (list.length === 0) {
+                    return (
+                      <div style={{ padding: 32, textAlign: "center", color: "#888" }}>
+                        No students found for this course.
+                      </div>
+                    );
+                  }
+                  return list.map(stu => (
+                    <div className="students-list-row" key={stu.id}>
+                      <div className="students-list-student">
+                        <img
+                          src={stu.avatar || "/avatar1.png"}
+                          alt={stu.first_name + " " + stu.last_name}
+                          className="students-list-avatar"
+                        />
+                        <div>
+                          <div className="students-list-name">
+                            {stu.first_name} {stu.last_name}
+                          </div>
+                          <div className="students-list-id">ID: {stu.id}</div>
+                        </div>
+                      </div>
+                      <div className="students-list-contact">
+                        <a href={`mailto:${stu.email}`}>{stu.email}</a>
+                        <div>{stu.phone}</div>
+                      </div>
+                      <div className="students-list-status">
+                        <span
+                          className="students-status-badge"
+                          style={{
+                            background:
+                              stu.status === "Active"
+                                ? "#22c55e"
+                                : stu.status === "Inactive"
+                                ? "#f59e42"
+                                : stu.status === "Graduated"
+                                ? "#6366f1"
+                                : stu.status === "Suspended"
+                                ? "#e11d48"
+                                : "#aaa",
+                            color: "#fff",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {stu.status}
+                        </span>
+                      </div>
+                      <div className="students-list-updated">
+                        <span className="students-list-updated-icon">🕒</span>
+                        {stu.updated_at ? new Date(stu.updated_at).toLocaleString() : ""}
+                      </div>
+                      <div className="students-list-actions">
+                        <button
+                          className="students-action-btn"
+                          title="Edit"
+                          onClick={() => handleEdit(stu)}
+                          style={{ marginRight: 8 }}
+                        >
+                          <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+                            <path
+                              d="M3 17.25V21h3.75l11.06-11.06-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
+                              fill="#888"
+                            />
+                          </svg> {/* <-- added closing svg */}
+                        </button>
+                        <button
+                          className="students-action-btn"
+                          title="Delete"
+                          onClick={() => handleDeleteClick(stu)}
+                          style={{ color: "#e11d48" }}
+                        >
+                          <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+                            <path
+                              d="M3 6h18M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6m-6 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2"
+                              stroke="#e11d48"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ));
+                }
+                // DEPT / PROGRAM VIEW
+                const key = selectedSubDept || selectedDept;
+                const list =
+                  (studentsByYearDept[selectedYear] &&
+                    studentsByYearDept[selectedYear][key]) ||
+                  [];
+                if (list.length === 0) {
+                  return (
+                    <div style={{ padding: 32, textAlign: "center", color: "#888" }}>
+                      No students found for this folder.
+                    </div>
+                  );
+                }
+                return list.map(stu => (
                   <div className="students-list-row" key={stu.id}>
                     <div className="students-list-student">
                       <img
@@ -1017,10 +1501,7 @@ const Students = () => {
                               : stu.status === "Suspended"
                               ? "#e11d48"
                               : "#aaa",
-                          color:
-                            stu.status === "Graduated"
-                              ? "#fff"
-                              : "#fff",
+                          color: "#fff",
                           fontWeight: 600,
                         }}
                       >
@@ -1029,9 +1510,7 @@ const Students = () => {
                     </div>
                     <div className="students-list-updated">
                       <span className="students-list-updated-icon">🕒</span>
-                      {stu.updated_at
-                        ? new Date(stu.updated_at).toLocaleString()
-                        : ""}
+                      {stu.updated_at ? new Date(stu.updated_at).toLocaleString() : ""}
                     </div>
                     <div className="students-list-actions">
                       <button
@@ -1050,7 +1529,7 @@ const Students = () => {
                             d="M3 17.25V21h3.75l11.06-11.06-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
                             fill="#888"
                           />
-                        </svg>
+                        </svg> {/* <-- added closing svg */}
                       </button>
                       <button
                         className="students-action-btn"
@@ -1070,18 +1549,8 @@ const Students = () => {
                       </button>
                     </div>
                   </div>
-                ))
-              ) : (
-                <div
-                  style={{
-                    padding: 32,
-                    color: "#888",
-                    textAlign: "center",
-                  }}
-                >
-                  No students found for this department and year.
-                </div>
-              )}
+                ));
+              })()}
             </div>
           </div>
         )}
@@ -1186,7 +1655,7 @@ const Students = () => {
                             d="M3 17.25V21h3.75l11.06-11.06-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
                             fill="#888"
                           />
-                        </svg>
+                        </svg> {/* <-- added closing svg */}
                       </button>
                       <button
                         className="students-action-btn"
@@ -1278,14 +1747,29 @@ const Students = () => {
                   name="department"
                   value={form.department}
                   onChange={e => {
-                    setForm({ ...form, department: e.target.value, program: "" });
+                    const dept = e.target.value;
+                    // reset program
+                    setForm({ ...form, department: dept, program: "" });
+                    // allow modal to show again for a fresh selection
+                    courseModalWasShownRef.current = false;
+                    if (dept) {
+                      const deptLower = dept.trim().toLowerCase();
+                      const matches = coursesData.filter(c =>
+                        ((c.department || c.program || "").trim().toLowerCase()) === deptLower
+                      );
+                      if (matches.length > 0) {
+                        setPendingDeptCourses(matches);
+                        setShowCourseSelectModal(true);
+                        courseModalWasShownRef.current = true;
+                      }
+                    }
                   }}
                   required
                 >
                   <option value="">Select Department</option>
-                  {departmentOptions.map((dept) => (
-                    <option key={dept} value={dept}>
-                      {dept}
+                  {departmentsData.map((dept) => (
+                    <option key={dept.id} value={dept.name}>
+                      {dept.name}
                     </option>
                   ))}
                 </select>
@@ -1308,6 +1792,33 @@ const Students = () => {
                         {prog}
                       </option>
                     ))}
+                  </select>
+                </div>
+              )}
+              {/* Auto-populated programs coming from Courses API (hidden if popup already set one) */}
+              {(availablePrograms.length > 0 || form.program) &&
+                !departmentSubfolders[form.department] && (
+                <div className="students-modal-row">
+                  <label>
+                    Program <span style={{ color: "#e11d48" }}>*</span>
+                  </label>
+                  <select
+                    name="program"
+                    value={form.program}
+                    onChange={e => setForm({ ...form, program: e.target.value })}
+                    required
+                  >
+                    <option value="">Select Program</option>
+                    {availablePrograms.map((prog) => (
+                      <option key={prog} value={prog}>
+                        {prog}
+                      </option>
+                    ))}
+                    {/* Ensure currently selected (e.g. from popup) is visible even if not in list yet */}
+                    {form.program &&
+                      !availablePrograms.includes(form.program) && (
+                        <option value={form.program}>{form.program}</option>
+                      )}
                   </select>
                 </div>
               )}
@@ -1489,9 +2000,9 @@ const Students = () => {
                       required
                     >
                       <option value="">Select Department</option>
-                      {departmentOptions.map((dept) => (
-                        <option key={dept} value={dept}>
-                          {dept}
+                      {departmentsData.map((dept) => (
+                        <option key={dept.id} value={dept.name}>
+                          {dept.name}
                         </option>
                       ))}
                     </select>
@@ -1605,7 +2116,7 @@ const Students = () => {
         <div className="students-modal-bg" onClick={() => setShowAddYearModal(false)}>
           <div className="students-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
             <h3 style={{ marginBottom: 16 }}>Add School Year Folder</h3>
-            <form onSubmit={handleAddYear}>
+                                             <form onSubmit={handleAddYear}>
               <div style={{ marginBottom: 16 }}>
                 <label>School Year (e.g. 2025-2026):</label>
                 <input
@@ -1618,7 +2129,7 @@ const Students = () => {
                     padding: 8,
                     borderRadius: 6,
                     border: "1px solid #ccc",
-                    marginTop: 6,
+                    marginTop:  6,
                   }}
                   placeholder="2025-2026"
                   required
@@ -1656,6 +2167,113 @@ const Students = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Course Select Popup (after choosing department) */}
+      {showCourseSelectModal && (
+        <div className="students-modal-bg" onClick={() => setShowCourseSelectModal(false)}>
+          <div
+            className="students-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 520,
+              width: "90%",
+              padding: "32px 36px",
+              borderRadius: 24
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Select Course / Program</h3>
+            <div style={{ color: "#555", marginBottom: 20 }}>
+              Courses available in: <b>{form.department}</b>
+            </div>
+            {pendingDeptCourses.length === 0 && (
+              <div style={{ padding: 24, textAlign: "center", color: "#888" }}>
+                No courses found for this department.
+              </div>
+            )}
+            <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 24 }}>
+              {pendingDeptCourses.map(course => {
+                const courseName = (course.name || course.program || "Untitled").trim();
+                return (
+                  <div
+                    key={course.id || courseName}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "12px 16px",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 10,
+                      marginBottom: 12,
+                      cursor: "pointer",
+                      background: form.program === courseName ? "#eef2ff" : "#fff",
+                      transition: "background .15s"
+                    }}
+                    onClick={() => {
+                      setForm(f => ({ ...f, program: courseName }));
+                      setShowCourseSelectModal(false);
+                    }}
+                  >
+                    <div style={{ fontWeight: 600 }}>{courseName}</div>
+                    <button
+                      type="button"
+                      style={{
+                        border: "none",
+                        background: "#6366f1",
+                        color: "#fff",
+                        padding: "6px 14px",
+                        borderRadius: 8,
+                        fontWeight: 600,
+                        fontSize: ".8rem"
+                      }}
+                    >
+                      Choose
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  // allow closing without selecting (user can still pick from dropdown if present)
+                  setShowCourseSelectModal(false);
+                }}
+                style={{
+                  background: "#eee",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 20px",
+                  fontWeight: 600
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!form.program}
+                onClick={() => setShowCourseSelectModal(false)}
+                style={{
+                  background: form.program ? "#6366f1" : "#a5b4fc",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "8px 20px",
+                  fontWeight: 600,
+                  cursor: form.program ? "pointer" : "not-allowed"
+                }}
+              >
+                Done
+              </button>
+            </div>
+            {!form.program && (
+              <div style={{ marginTop: 12, fontSize: ".8rem", color: "#666" }}>
+                Pick a course or close to choose later.
+              </div>
+            )}
           </div>
         </div>
       )}

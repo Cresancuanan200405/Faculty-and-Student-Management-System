@@ -19,7 +19,6 @@ class StoreCourseRequest extends FormRequest
             'program'       => 'required|string|max:255',
             'instructor'    => 'nullable|string|max:255',
             'credits'       => 'nullable|integer|min:0|max:30',
-            'academic_year' => 'required|string|max:255',
             'max_students'  => 'nullable|integer|min:1',
             'status'        => 'required|in:Active,Inactive',
         ];
@@ -30,7 +29,6 @@ class StoreCourseRequest extends FormRequest
         return [
             'name.required' => 'Course name is required.',
             'program.required' => 'Program is required.',
-            'academic_year.required' => 'Academic year is required.',
             'credits.integer' => 'Credits must be a number.',
             'credits.min' => 'Credits must be at least 0.',
             'credits.max' => 'Credits cannot exceed 30.',

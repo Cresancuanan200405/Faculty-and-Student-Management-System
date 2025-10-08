@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import axios from "../axios";
 import "../../sass/Faculty.scss";
@@ -1598,6 +1597,9 @@ const Faculty = () => {
 							}}
 						>
 							{Object.entries(initialState).map(([key, _]) => {
+								// Skip the course_id field
+								if (key === "course_id") return null;
+								
 								// Only show dean_department when editing a Deans program
 								if (key === 'dean_department' && editForm.program !== 'Deans') {
 									return null;

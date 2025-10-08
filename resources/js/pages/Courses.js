@@ -2,12 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import '../../sass/Courses.scss';
 
+// Modified initialForm without academic_year
 const initialForm = {
   name: '',
   description: '',
   credits: '',
   program: '',
-  academic_year: '',
   instructor: '',
   status: 'Active',
   max_students: ''
@@ -181,7 +181,6 @@ const Courses = () => {
       description: course.description || '',
       credits: course.credits || '',
       program: course.program || '',
-      academic_year: course.academic_year || '',
       instructor: course.instructor || '',
       status: course.status || 'Active',
       max_students: course.max_students || ''
@@ -202,7 +201,8 @@ const Courses = () => {
       const payload = {
         ...form,
         credits: form.credits ? Number(form.credits) : null,
-        max_students: form.max_students ? Number(form.max_students) : null
+        max_students: form.max_students ? Number(form.max_students) : null,
+        department: form.program // added so the course belongs to a department
       };
 
       let response;
@@ -214,6 +214,7 @@ const Courses = () => {
 
       if (response.data.success) {
         await loadCourses();
+        window.dispatchEvent(new Event('courseAdded'));
         
         const message = editingCourse ? 
           `Course "${payload.name}" has been updated successfully!` :
@@ -375,14 +376,16 @@ const Courses = () => {
                   <th>Program</th>
                   <th>Instructor</th>
                   <th>Credits</th>
-                  <th>Academic Year</th>
+                  {/* Removed academic_year header */}
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="7" className="loading-cell">Loading...</td></tr>
+                  <tr>
+                    <td colSpan="6" className="loading-cell">Loading...</td>
+                  </tr>
                 ) : filtered.length ? (
                   filtered.map(course => (
                     <tr key={course.id}>
@@ -393,10 +396,12 @@ const Courses = () => {
                       <td>
                         <div className="instructor-info">
                           <div className="instructor-name">{course.instructor || 'Not Assigned'}</div>
+                          
                         </div>
                       </td>
-                      <td><span className="credits-number">{course.credits}</span></td>
-                      <td>{course.academic_year}</td>
+                      <td>
+                        <span className="credits-number">{course.credits}</span>
+                      </td>
                       <td>
                         <span className={`status-pill ${course.status.toLowerCase()}`}>
                           {course.status}
@@ -428,7 +433,9 @@ const Courses = () => {
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan="7" className="empty-row">No courses found</td></tr>
+                  <tr>
+                    <td colSpan="6" className="empty-row">No courses found</td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -472,10 +479,7 @@ const Courses = () => {
                     <span className="course-detail-label">Credits:</span>
                     <span className="course-detail-value">{course.credits}</span>
                   </div>
-                  <div className="course-detail-row">
-                    <span className="course-detail-label">Academic Year:</span>
-                    <span className="course-detail-value">{course.academic_year}</span>
-                  </div>
+                  {/* Removed Academic Year row */}
                   {course.max_students && (
                     <div className="course-detail-row">
                       <span className="course-detail-label">Max Students:</span>
@@ -531,15 +535,6 @@ const Courses = () => {
                   <option value="">Select Program</option>
                   {availablePrograms.map(program => (
                     <option key={program} value={program}>{program}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Academic Year *</label>
-                <select name="academic_year" value={form.academic_year} onChange={onChange} required>
-                  <option value="">Select Academic Year</option>
-                  {availableAcademicYears.map(year => (
-                    <option key={year} value={year}>{year}</option>
                   ))}
                 </select>
               </div>

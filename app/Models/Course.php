@@ -16,7 +16,6 @@ class Course extends Model
         'program',
         'instructor',
         'credits',
-        'academic_year',
         'max_students',
         'status'
     ];

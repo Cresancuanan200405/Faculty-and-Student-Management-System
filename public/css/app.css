@@ -12402,7 +12402,7 @@ textarea.form-control-lg {
   background: linear-gradient(90deg, #1eae98 0%, #4e2db3 100%);
   border-radius: 1.5rem;
   color: #fff;
-  padding: 1.2rem 2rem 1.2rem 2.5rem;
+  padding: 1.2rem 2rem; /* reset: remove large left padding */
   margin-bottom: 2rem;
   display: flex;
   flex-direction: column;
@@ -12775,6 +12775,26 @@ textarea.form-control-lg {
   color: #aaa;
   font-size: 0.95em;
   padding: 4px 0 8px 0;
+}
+
+/* Move banner icon further from the left edge */
+.students-banner > img,
+.students-banner > .students-banner-icon {
+  position: absolute; /* ensure we can control left */
+  top: 50%;
+  transform: translateY(-50%);
+  left: 70px; /* increase this value to move more (e.g. 80px) */
+}
+
+/* If the text was spaced using padding-left on .students-banner,
+   keep it in sync with image position + icon width (~64px incl. gap). */
+.students-banner {
+  padding-left: 150px; /* 70px (offset) + ~64px (icon size) + ~16px gap */
+}
+
+/* Banner icon spacing */
+.students-banner-icon {
+  margin-left: -12px; /* change this number to move more/less */
 }
 
 .students-modal-bg {
