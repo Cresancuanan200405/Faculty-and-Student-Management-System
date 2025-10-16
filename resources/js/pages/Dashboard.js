@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axiosLib from "axios";
 import '../../sass/Dashboard.scss';
+import '../utils/activityBus'; // ensure bus is available for the whole app
+
+const DASHBOARD_BANNER_IMG = "/images/Dashboard_Manager.png"; // from public/images
 
 const Dashboard = () => {
   const [tab, setTab] = useState('Programs');
@@ -245,22 +248,52 @@ const Dashboard = () => {
       });
   }, [students, loading]);
   
-  // Function to toggle academic year status
+  // Function to toggle academic year status and save to localStorage
   const toggleYearStatus = (year) => {
-    setAcademicYears(prev => 
-      prev.map(y => 
+    setAcademicYears(prev => {
+      const updated = prev.map(y => 
         y.year === year ? { ...y, status: y.status === 'Active' ? 'Completed' : 'Active' } : y
-      )
-    );
+      );
+      
+      // Save the updated statuses to localStorage
+      try {
+        // Only store the year and status to keep storage minimal
+        const statusesMap = {};
+        updated.forEach(y => {
+          statusesMap[y.year] = y.status;
+        });
+        localStorage.setItem('academic_year_statuses', JSON.stringify(statusesMap));
+      } catch (error) {
+        console.error('Error saving academic year statuses to localStorage:', error);
+      }
+      
+      return updated;
+    });
   };
 
   // State to manage academic year status changes
   const [academicYearsState, setAcademicYears] = useState([]);
   
-  // Initialize academicYearsState when academicYears changes
+  // Initialize academicYearsState when academicYears changes, but preserve saved statuses
   useEffect(() => {
-    if (academicYears.length && !academicYearsState.length) {
-      setAcademicYears(academicYears);
+    if (academicYears.length) {
+      // Try to load saved statuses from localStorage
+      let savedStatuses = {};
+      try {
+        const saved = localStorage.getItem('academic_year_statuses');
+        savedStatuses = saved ? JSON.parse(saved) : {};
+      } catch (error) {
+        console.error('Error loading academic year statuses from localStorage:', error);
+      }
+      
+      // Apply saved statuses to the calculated academic years
+      const yearsWithSavedStatus = academicYears.map(year => ({
+        ...year,
+        // If we have a saved status for this year, use it; otherwise keep the calculated status
+        status: savedStatuses[year.year] || year.status
+      }));
+      
+      setAcademicYears(yearsWithSavedStatus);
     }
   }, [academicYears]);
 
@@ -283,6 +316,37 @@ const Dashboard = () => {
 
   // IMPROVED: Set up global event listeners that persist across navigation
   useEffect(() => {
+    // If ActivityBus is initialized, simply subscribe to its updates and skip registering listeners here
+    if (window.__activityBusInitialized) {
+      const onUpdated = (e) => {
+        const list = e?.detail?.activities;
+        if (Array.isArray(list)) {
+          setActivities(list);
+        } else {
+          try {
+            const saved = JSON.parse(localStorage.getItem('dashboard_activities')) || [];
+            setActivities(saved);
+          } catch {}
+        }
+      };
+      window.addEventListener('dashboardActivitiesUpdated', onUpdated);
+
+      // Seed from storage
+      try {
+        const saved = JSON.parse(localStorage.getItem('dashboard_activities')) || [];
+        setActivities(saved.length ? saved : [{
+          id: Date.now(),
+          type: 'system',
+          description: 'Dashboard initialized successfully',
+          entity: null,
+          timestamp: new Date()
+        }]);
+      } catch {}
+
+      return () => window.removeEventListener('dashboardActivitiesUpdated', onUpdated);
+    }
+
+    // Fallback: original listener setup (runs only if bus didn't initialize)
     console.log('🔧 Setting up GLOBAL activity listeners...'); // Debug log
 
     // Create a function that always uses the current state
@@ -359,6 +423,23 @@ const Dashboard = () => {
       `Program deleted: ${dept?.name || 'Unknown Program'}`
     );
 
+    const handleStudentYearArchived = createEventHandler(
+      'event_studentYearArchived',
+      (p) => `Students SY archived: ${p?.label || 'Unknown'}`
+    );
+    const handleStudentYearRestored = createEventHandler(
+      'event_studentYearRestored',
+      (p) => `Students SY restored: ${p?.label || 'Unknown'}`
+    );
+    const handleFacultyYearArchived = createEventHandler(
+      'event_facultyYearArchived',
+      (p) => `Faculty SY archived: ${p?.label || 'Unknown'}`
+    );
+    const handleFacultyYearRestored = createEventHandler(
+      'event_facultyYearRestored',
+      (p) => `Faculty SY restored: ${p?.label || 'Unknown'}`
+    );
+
     // Remove existing listeners if they exist
     if (window.dashboardEventHandlers) {
       console.log('Removing existing event listeners...');
@@ -381,6 +462,10 @@ const Dashboard = () => {
       departmentAdded: handleDepartmentAdded,
       departmentUpdated: handleDepartmentUpdated,
       departmentDeleted: handleDepartmentDeleted,
+      studentYearArchived: handleStudentYearArchived,
+      studentYearRestored: handleStudentYearRestored,
+      facultyYearArchived: handleFacultyYearArchived,
+      facultyYearRestored: handleFacultyYearRestored,
     };
 
     // Add event listeners
@@ -396,6 +481,10 @@ const Dashboard = () => {
     window.addEventListener('departmentAdded', handleDepartmentAdded);
     window.addEventListener('departmentUpdated', handleDepartmentUpdated);
     window.addEventListener('departmentDeleted', handleDepartmentDeleted);
+    window.addEventListener('studentYearArchived', handleStudentYearArchived);
+    window.addEventListener('studentYearRestored', handleStudentYearRestored);
+    window.addEventListener('facultyYearArchived', handleFacultyYearArchived);
+    window.addEventListener('facultyYearRestored', handleFacultyYearRestored);
 
     console.log('🎯 Global event listeners added successfully!');
     console.log('Available handlers:', Object.keys(window.dashboardEventHandlers));
@@ -537,12 +626,55 @@ const Dashboard = () => {
     <div className="dashboard-root">
       <div className="dashboard-banner">
         <div className="dashboard-banner-content">
-          <div className="dashboard-banner-title">Welcome Back, Bronny</div>
-          <div className="dashboard-banner-sub">Father Saturnino Urios University - Faculty and Student Profile Management System Dashboard</div>
-          <div className="dashboard-banner-desc">Here's what's happening in your academic institution today.</div>
+          {/* Icon + title/sub, styled like Students banner */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 18,
+              flexWrap: "wrap",
+              flex: 1
+            }}
+          >
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                background: "#f59e0b",
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 2px 6px #0002",
+                overflow: "hidden",
+                flexShrink: 0
+              }}
+            >
+              <img
+                src={DASHBOARD_BANNER_IMG}
+                alt="Dashboard Management"
+                style={{ width: "70%", height: "70%", objectFit: "contain" }}
+                onError={(e) => {
+                  // Hide image container if not found
+                  e.currentTarget.parentElement.style.display = "none";
+                }}
+              />
+            </div>
+            <div style={{ minWidth: 200 }}>
+              <div className="dashboard-banner-title">Welcome Back, Bronny</div>
+              <div className="dashboard-banner-sub">
+                Father Saturnino Urios University - Faculty and Student Profile Management System Dashboard
+              </div>
+            </div>
+          </div>
+
+          {/* Keep the existing descriptive bar below the header */}
+          <div className="dashboard-banner-desc">
+            Here's what's happening in your academic institution today.
+          </div>
         </div>
       </div>
-
+      
       {error && <div className="dashboard-error">{error}</div>}
 
       <div className="dashboard-stats-row">
@@ -583,7 +715,10 @@ const Dashboard = () => {
           <button
             key={tabName}
             className={tab === tabName ? 'dashboard-tab active' : 'dashboard-tab'}
-            onClick={() => setTab(tabName)}
+            onClick={(e) => {
+              e.preventDefault(); // Prevent default button behavior
+              setTab(tabName);
+            }}
           >
             {tabName}
           </button>
@@ -715,20 +850,41 @@ const Dashboard = () => {
             <div className="prog-sub">Latest updates from your institution</div>
           </div>
           
-          {/* Empty content - all activities removed */}
           <div className="ra-content">
-            <div style={{ 
-              padding: '32px 16px', 
-              textAlign: 'center', 
-              color: '#6b7280',
-              background: '#f9fafb',
-              borderRadius: '8px',
-              margin: '16px 0'
-            }}>
-              <div style={{ fontSize: '2rem', marginBottom: '8px' }}>📊</div>
-              <div style={{ fontWeight: 600, marginBottom: '4px' }}>No activities</div>
-              <div style={{ fontSize: '0.9rem' }}>This section has been cleared</div>
-            </div>
+            {activities.length === 0 ? (
+              <div className="ra-empty">
+                <div className="ra-empty-icon">🔔</div>
+                <div className="ra-empty-title">No activities yet</div>
+                <div className="ra-empty-desc">Activities will appear here when changes are made to students, faculty, courses, or departments</div>
+              </div>
+            ) : (
+              <>
+                <div className="ra-list">
+                  {activities.map(activity => (
+                    <div className="ra-item" key={activity.id}>
+                      <div 
+                        className="ra-icon" 
+                        style={{ backgroundColor: getActivityColor(activity.type) }}
+                      >
+                        {getActivityIcon(activity.type)}
+                      </div>
+                      <div className="ra-details">
+                        <div className="ra-description">{activity.description}</div>
+                        <div className="ra-time">{formatTimeAgo(activity.timestamp)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="ra-controls">
+                  <button 
+                    className="ra-button"
+                    onClick={clearActivities}
+                  >
+                    Clear All Activities
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

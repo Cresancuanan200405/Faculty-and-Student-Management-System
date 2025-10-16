@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import axios from "../axios";
-import notifications from '../utils/notifications'; // Import notifications utility
+import notifications from '../utils/notifications';
+import '../utils/activityBus';
 import "../../sass/Students.scss";
 
-// Banner image (placed in public/images/Student_Manager.png)
 const STUDENT_BANNER_IMG = "/images/Student_Manager.png";
 
 const initialState = {
@@ -77,7 +77,6 @@ const Students = () => {
   const [selectedYear, setSelectedYear] = useState(null);
   const [selectedDept, setSelectedDept] = useState(null);
   const [selectedSubDept, setSelectedSubDept] = useState(null);
-  // NEW: track selected course
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [editLoading, setEditLoading] = useState(false);
   const [customYears, setCustomYears] = useState(() => {
@@ -96,7 +95,6 @@ const Students = () => {
   const [addYearError, setAddYearError] = useState("");
   const [departmentsData, setDepartmentsData] = useState([]);
   const [coursesData, setCoursesData] = useState([]);
-  // NEW: course selection popup state
   const [showCourseSelectModal, setShowCourseSelectModal] = useState(false);
   const [pendingDeptCourses, setPendingDeptCourses] = useState([]);
   const courseModalWasShownRef = useRef(false);
@@ -104,6 +102,10 @@ const Students = () => {
   const [archiveTargetYear, setArchiveTargetYear] = useState(null);
   const [archiveConfirmText, setArchiveConfirmText] = useState("");
   const [archiveInProgress, setArchiveInProgress] = useState(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [restoreTargetYear, setRestoreTargetYear] = useState(null);
+  const [restoreConfirmText, setRestoreConfirmText] = useState("");
+  const [restoreInProgress, setRestoreInProgress] = useState(false);
 
   const allYearFolders = [...yearFolders, ...customYears];
 
@@ -127,7 +129,6 @@ const Students = () => {
     fetchStudents();
   }, []);
 
-  // fetching departments data from Departments endpoint
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
@@ -140,7 +141,6 @@ const Students = () => {
     fetchDepartments();
   }, []);
 
-  // Fetch courses (reusable so we can refresh on external events)
   const fetchCourses = useCallback(async () => {
     try {
       const res = await axios.get("/api/courses");
@@ -152,7 +152,6 @@ const Students = () => {
 
   useEffect(() => {
     fetchCourses();
-    // Listen to course events fired from Courses.js
     const handleCourseChange = () => fetchCourses();
     window.addEventListener("courseAdded", handleCourseChange);
     window.addEventListener("courseUpdated", handleCourseChange);
@@ -194,35 +193,33 @@ const Students = () => {
     }
 
     const submitData = { ...form };
-    // Remove "SY " prefix if present
     if (submitData.academic_year.startsWith("SY ")) {
       submitData.academic_year = submitData.academic_year.replace(/^SY\s*/, "");
     }
-    // Preserve program if user selected one (e.g. from dynamic Courses API)
     if (!departmentSubfolders[form.department] && !submitData.program) {
       delete submitData.program;
     }
     setLoading(true);
     try {
-      // Add student
       const res = await axios.post("/api/students", submitData);
-
-      // After a student is added, fetch the latest departments and courses
       const depRes = await axios.get("/api/departments");
       setDepartmentsData(depRes.data.departments || []);
 
       const courseRes = await axios.get("/api/courses");
       setCoursesData(courseRes.data.courses || []);
 
-      // Update students list with the new student
       const newStudent = res.data.student || submitData;
       setStudents((prev) => [
         ...(prev || []),
         newStudent
       ]);
       
-      // Replace message and success state with notifications.add
       notifications.add(`Student ${submitData.first_name} ${submitData.last_name} added successfully!`);
+      
+      window.dispatchEvent(new CustomEvent('studentAdded', {
+        detail: newStudent,
+        bubbles: true
+      }));
       
       setShowModal(false);
       setForm(initialState);
@@ -240,10 +237,8 @@ const Students = () => {
   };
 
   const handleEdit = (student) => {
-    // Fill missing keys with empty string
     const filledStudent = { ...initialState, ...student };
 
-    // Try to find the correct department and program for the student
     let department = filledStudent.department;
     let program = filledStudent.program;
 
@@ -288,8 +283,12 @@ const Students = () => {
       setStudents(refreshed.data.students || []);
       setEditModal(false);
       
-      // Replace success state with notifications.edit
       notifications.edit(`Student ${editForm.first_name} ${editForm.last_name} updated successfully!`);
+
+      window.dispatchEvent(new CustomEvent('studentUpdated', {
+        detail: { ...editForm, id: editId },
+        bubbles: true
+      }));
       
     } catch (err) {
       const errorMessage = err.response?.data?.message ||
@@ -311,7 +310,6 @@ const Students = () => {
       return;
     }
     const label = `SY ${trimmed}`;
-    // Check for duplicates (case-insensitive)
     const exists = allYearFolders.some(
       (y) => y.toLowerCase() === label.toLowerCase()
     );
@@ -321,7 +319,6 @@ const Students = () => {
     }
     setCustomYears((prev) => [...prev, label]);
     
-    // Replace success state with notifications.add
     notifications.add(`School Year folder ${label} added successfully!`);
     
     setShowAddYearModal(false);
@@ -336,7 +333,6 @@ const Students = () => {
       setCustomYears((prev) => prev.filter((y) => y !== label));
       setYearMenuOpen(null);
       
-      // Replace success state with notifications.delete
       notifications.delete(`School Year folder ${label} deleted successfully!`);
     }
   };
@@ -351,7 +347,6 @@ const Students = () => {
       return updated;
     });
     
-    // Replace success state with notifications.info
     notifications.info(`School Year folder ${year} archived successfully!`);
   };
 
@@ -364,8 +359,14 @@ const Students = () => {
   const confirmArchiveYear = async () => {
     if (archiveConfirmText !== "Archive" || !archiveTargetYear) return;
     setArchiveInProgress(true);
+
+    const label = archiveTargetYear;
     try {
-      archiveYear(archiveTargetYear);
+      archiveYear(label);
+      window.dispatchEvent(new CustomEvent('studentYearArchived', {
+        detail: { label },
+        bubbles: true
+      }));
     } finally {
       setArchiveInProgress(false);
       setShowArchiveConfirm(false);
@@ -373,23 +374,28 @@ const Students = () => {
     }
   };
 
-  const handleArchiveYear = (label) => {
-    if (!archivedYears.includes(label)) {
-      setArchivedYears((prev) => [...prev, label]);
-    }
-    setYearMenuOpen(null);
+  const requestRestoreYear = (year) => {
+    setRestoreTargetYear(year);
+    setRestoreConfirmText("");
+    setShowRestoreConfirm(true);
   };
 
-  const handleRestoreYear = (label) => {
-    const input = window.prompt(
-      `Type CONFIRM to restore the folder "${label}" from the archives.`
-    );
-    if (input && input.trim().toLowerCase() === "confirm") {
+  const confirmRestoreYear = async () => {
+    if (restoreConfirmText !== "Restore" || !restoreTargetYear) return;
+    setRestoreInProgress(true);
+
+    const label = restoreTargetYear;
+    try {
       setArchivedYears((prev) => prev.filter((y) => y !== label));
-      setRestoredYearLabel(label);
-      
-      // Replace success state with notifications.edit
       notifications.edit(`School Year folder ${label} has been restored from the archives!`);
+      window.dispatchEvent(new CustomEvent('studentYearRestored', {
+        detail: { label },
+        bubbles: true
+      }));
+    } finally {
+      setRestoreInProgress(false);
+      setShowRestoreConfirm(false);
+      setRestoreTargetYear(null);
     }
   };
 
@@ -429,7 +435,6 @@ const Students = () => {
   filteredStudents.forEach((stu) => {
     let yearFolder = "";
 
-    // Always normalize to "SY xxxx-xxxx"
     let rawYear = (stu.academic_year || "").replace(/^SY\s*/, "");
     if (/^\d{4}-\d{4}$/.test(rawYear)) {
       yearFolder = `SY ${rawYear}`;
@@ -466,8 +471,12 @@ const Students = () => {
         await axios.delete(`/api/students/${student.id}`);
         setStudents(students.filter(s => s.id !== student.id));
         
-        // Replace success state with notifications.delete
         notifications.delete(`Student ${student.first_name} ${student.last_name} deleted successfully!`);
+
+        window.dispatchEvent(new CustomEvent('studentDeleted', {
+          detail: student,
+          bubbles: true
+        }));
         
       } catch (err) {
         notifications.info("Failed to delete student.");
@@ -493,7 +502,6 @@ const Students = () => {
     return 0;
   };
 
-  // NEW: helper to normalize SY labels
   const normalizeYearLabel = (raw) => {
     if (!raw) return "";
     let yr = raw.replace(/^SY\s*/i, "");
@@ -505,7 +513,6 @@ const Students = () => {
     return raw.startsWith("SY ") ? raw : `SY ${yr}`;
   };
 
-  // NEW: Memo list of courses belonging to currently selected department
   const coursesForSelectedDept = useMemo(() => {
     if (!selectedDept || !coursesData || coursesData.length === 0) return [];
     const deptLower = selectedDept.trim().toLowerCase();
@@ -518,7 +525,6 @@ const Students = () => {
 
   const availablePrograms = useMemo(() => {
     if (!form.department) return [];
-    // Filter the courses that belong to this department.
     const deptLower = form.department.trim().toLowerCase();
     const programs = coursesData
       .filter(course =>
@@ -526,18 +532,16 @@ const Students = () => {
       )
       .map(course => (course.name || course.program || "").trim())
       .filter(Boolean);
-    return Array.from(new Set(programs)); // Unique programs only.
+    return Array.from(new Set(programs));
   }, [coursesData, form.department]);
 
-  // Auto-open popup once courses load for a selected department (covers late-added courses)
   useEffect(() => {
     if (!form.department) return;
-    if (departmentSubfolders[form.department]) return; // static programs handled separately
+    if (departmentSubfolders[form.department]) return;
     const deptLower = form.department.trim().toLowerCase();
     const matches = coursesData.filter(c =>
       ((c.department || c.program || "").trim().toLowerCase()) === deptLower
     );
-    // Only open if there are matches, program not yet chosen, and we haven't shown it for this dept.
     if (matches.length > 0 && !form.program && !courseModalWasShownRef.current) {
       setPendingDeptCourses(matches);
       setShowCourseSelectModal(true);
@@ -547,7 +551,6 @@ const Students = () => {
 
   return (
     <div className="students-root">
-      {/* Archive confirmation modal */}
       {showArchiveConfirm && (
         <div
           className="students-modal-bg"
@@ -643,6 +646,101 @@ const Students = () => {
         </div>
       )}
 
+      {showRestoreConfirm && (
+        <div
+          className="students-modal-bg"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2500
+          }}
+          onClick={() => !restoreInProgress && setShowRestoreConfirm(false)}
+        >
+          <div
+            className="students-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              width: "100%",
+              maxWidth: 440,
+              padding: "32px 36px",
+              borderRadius: 22,
+              boxShadow: "0 8px 28px rgba(0,0,0,.18)"
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>Restore School Year Folder</h3>
+            <div style={{ fontSize: 14, lineHeight: 1.5, color: "#374151", marginBottom: 18 }}>
+              
+              <br />
+              <b>{restoreTargetYear}</b>
+              <br />
+              
+              <br />
+              Type <code style={{ background: "#f3f4f6", padding: "2px 4px", borderRadius: 4 }}>Restore</code> to confirm.
+            </div>
+            <input
+              autoFocus
+              type="text"
+              placeholder='Type "Restore" to confirm'
+              value={restoreConfirmText}
+              onChange={(e) => setRestoreConfirmText(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #d1d5db",
+                marginBottom: 20,
+                fontSize: 14
+              }}
+              disabled={restoreInProgress}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setShowRestoreConfirm(false)}
+                disabled={restoreInProgress}
+                style={{
+                  background: "#e5e7eb",
+                  border: "none",
+                  padding: "8px 18px",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor: restoreInProgress ? "not-allowed" : "pointer"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmRestoreYear}
+                disabled={restoreConfirmText !== "Restore" || restoreInProgress}
+                style={{
+                  background:
+                    restoreConfirmText === "Restore" && !restoreInProgress
+                      ? "#16a34a"
+                      : "#bbf7d0",
+                  color: "#fff",
+                  border: "none",
+                  padding: "8px 22px",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor:
+                    restoreConfirmText === "Restore" && !restoreInProgress
+                      ? "pointer"
+                      : "not-allowed"
+                }}
+              >
+                {restoreInProgress ? "Restoring..." : "Restore"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="students-banner">
         <div
           style={{
@@ -673,7 +771,6 @@ const Students = () => {
               alt="Student Management"
               style={{ width: "70%", height: "70%", objectFit: "contain" }}
               onError={(e) => {
-                // Hide image container if not found
                 e.currentTarget.parentElement.style.display = "none";
               }}
             />
@@ -788,7 +885,6 @@ const Students = () => {
       </div>
       
       <div className="students-list-card">
-        {/* Main Folders UI */}
         {!selectedYear && !showArchived && !isSearchActive && (
           <div className="students-folders-container">
             <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
@@ -868,7 +964,6 @@ const Students = () => {
           </div>
         )}
 
-        {/* Archived Folders UI */}
         {!selectedYear && showArchived && (
           <div className="students-folders-container">
             <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
@@ -891,7 +986,7 @@ const Students = () => {
                   </div>
                   <button
                     className="students-folder-restore-btn"
-                    onClick={() => handleRestoreYear(label)}
+                    onClick={() => requestRestoreYear(label)}
                   >
                     Restore
                   </button>
@@ -901,7 +996,6 @@ const Students = () => {
           </div>
         )}
 
-        {/* Department Folders UI */}
         {selectedYear && !selectedDept && (
           <div>
             <div
@@ -944,10 +1038,8 @@ const Students = () => {
                 </div>
               ) : (
                 departmentsData.map((dept) => {
-                  // Compute the student count for this department within the selected school year.
                   const countForDept = students.filter((stu) => {
                     let stuYear = stu.academic_year || "";
-                    // Normalize the academic_year to a "SY xxxx-xxxx" format.
                     if (!stuYear.startsWith("SY ")) {
                       stuYear = `SY ${stuYear}`;
                     }
@@ -985,7 +1077,6 @@ const Students = () => {
                       <div style={{ flex: 1, fontWeight: 600 }}>
                         {dept.name}
                       </div>
-                      {/* Badge Indicator for student count */}
                       <span
                         style={{
                           background: "#e0e7ff",
@@ -1006,10 +1097,6 @@ const Students = () => {
           </div>
         )}
 
-        {/*
-          Unified Department Children (Courses first, fallback to predefined programs)
-          Show ONLY if there are courses or predefined program subfolders.
-        */}
         {selectedYear &&
           selectedDept &&
           !selectedSubDept &&
@@ -1075,7 +1162,6 @@ const Students = () => {
                 <span>Number of Students</span>
               </div>
 
-              {/* COURSES LIST (if any) */}
               {coursesForSelectedDept.length > 0 &&
                 coursesForSelectedDept.map(course => {
                   const courseName = course.name || "Untitled Course";
@@ -1133,7 +1219,6 @@ const Students = () => {
                   );
                 })}
 
-              {/* FALLBACK PROGRAM SUBFOLDERS (only if no courses) */}
               {coursesForSelectedDept.length === 0 &&
                 departmentSubfolders[selectedDept] &&
                 departmentSubfolders[selectedDept].map(prog => {
@@ -1191,14 +1276,10 @@ const Students = () => {
           </div>
         )}
 
-        {/* Students List (Department without programs, a Program, or a Course) */}
         {selectedYear && (
           (
-            // If a course is chosen
             selectedCourse ||
-            // If a program(subdept) chosen
             selectedSubDept ||
-            // If department has neither courses nor predefined subfolders (show dept-level students)
             (selectedDept &&
               !selectedCourse &&
               !selectedSubDept &&
@@ -1258,7 +1339,6 @@ const Students = () => {
               </div>
 
               {(() => {
-                // COURSE VIEW
                 if (selectedCourse) {
                   const list = filteredStudents.filter(stu => {
                     const stuYear = normalizeYearLabel(stu.academic_year);
@@ -1331,7 +1411,7 @@ const Students = () => {
                               d="M3 17.25V21h3.75l11.06-11.06-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
                               fill="#888"
                             />
-                          </svg> {/* <-- added closing svg */}
+                          </svg>
                         </button>
                         <button
                           className="students-action-btn"
@@ -1353,7 +1433,6 @@ const Students = () => {
                     </div>
                   ));
                 }
-                // DEPT / PROGRAM VIEW
                 const key = selectedSubDept || selectedDept;
                 const list =
                   (studentsByYearDept[selectedYear] &&
@@ -1427,7 +1506,7 @@ const Students = () => {
                             d="M3 17.25V21h3.75l11.06-11.06-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
                             fill="#888"
                           />
-                        </svg> {/* <-- added closing svg */}
+                        </svg>
                       </button>
                       <button
                         className="students-action-btn"
@@ -1453,7 +1532,6 @@ const Students = () => {
           </div>
         )}
 
-        {/* Show filtered students list if searching */}
         {!selectedYear && !showArchived && isSearchActive && (
           <div>
             <div
@@ -1551,7 +1629,7 @@ const Students = () => {
                             d="M3 17.25V21h3.75l11.06-11.06-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"
                             fill="#888"
                           />
-                        </svg> {/* <-- added closing svg */}
+                        </svg>
                       </button>
                       <button
                         className="students-action-btn"
@@ -1588,7 +1666,6 @@ const Students = () => {
         )}
       </div>
 
-      {/* Modal for Add Student */}
       {showModal && (
         <div className="students-modal-bg" onClick={() => setShowModal(false)}>
           <div
@@ -1644,9 +1721,7 @@ const Students = () => {
                   value={form.department}
                   onChange={e => {
                     const dept = e.target.value;
-                    // reset program
                     setForm({ ...form, department: dept, program: "" });
-                    // allow modal to show again for a fresh selection
                     courseModalWasShownRef.current = false;
                     if (dept) {
                       const deptLower = dept.trim().toLowerCase();
@@ -1670,7 +1745,6 @@ const Students = () => {
                   ))}
                 </select>
               </div>
-              {/* Show program dropdown if department has subfolders */}
               {departmentSubfolders[form.department] && (
                 <div className="students-modal-row">
                   <label>
@@ -1691,7 +1765,6 @@ const Students = () => {
                   </select>
                 </div>
               )}
-              {/* Auto-populated programs coming from Courses API (hidden if popup already set one) */}
               {(availablePrograms.length > 0 || form.program) &&
                 !departmentSubfolders[form.department] && (
                 <div className="students-modal-row">
@@ -1710,7 +1783,6 @@ const Students = () => {
                         {prog}
                       </option>
                     ))}
-                    {/* Ensure currently selected (e.g. from popup) is visible even if not in list yet */}
                     {form.program &&
                       !availablePrograms.includes(form.program) && (
                         <option value={form.program}>{form.program}</option>
@@ -1840,7 +1912,6 @@ const Students = () => {
         </div>
       )}
 
-      {/* Modal for Edit Student */}
       {editModal && (
         <div className="students-modal-bg" onClick={() => setEditModal(false)}>
           <div
@@ -2007,7 +2078,6 @@ const Students = () => {
         </div>
       )}
 
-      {/* Add SY Folder Modal */}
       {showAddYearModal && (
         <div className="students-modal-bg" onClick={() => setShowAddYearModal(false)}>
           <div className="students-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
@@ -2067,7 +2137,6 @@ const Students = () => {
         </div>
       )}
 
-      {/* Course Select Popup (after choosing department) */}
       {showCourseSelectModal && (
         <div className="students-modal-bg" onClick={() => setShowCourseSelectModal(false)}>
           <div
@@ -2103,7 +2172,7 @@ const Students = () => {
                       border: "1px solid #e5e7eb",
                       borderRadius: 10,
                       marginBottom: 12,
-                      cursor: "pointer",
+                                           cursor: "pointer",
                       background: form.program === courseName ? "#eef2ff" : "#fff",
                       transition: "background .15s"
                     }}
@@ -2135,7 +2204,6 @@ const Students = () => {
               <button
                 type="button"
                 onClick={() => {
-                  // allow closing without selecting (user can still pick from dropdown if present)
                   setShowCourseSelectModal(false);
                 }}
                 style={{

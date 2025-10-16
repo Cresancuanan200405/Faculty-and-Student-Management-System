@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import axios from "../axios";
 import "../../sass/Faculty.scss";
 import notifications from '../utils/notifications';
+import '../utils/activityBus';
 
 const initialState = {
   first_name: "",
@@ -19,7 +20,6 @@ const initialState = {
   assigned_program: "",
 };
 
-// Top-level folders under each School Year (SY)
 const departmentOptions = [
   "Major Leadership / Administrative Positions",
   "Academic / Teaching Positions",
@@ -35,7 +35,6 @@ const yearFolders = [
   "SY 2024-2025",
 ];
 
-// Subfolders (programs/positions) inside each top-level folder
 const departmentSubfolders = {
   "Major Leadership / Administrative Positions": [
     "University President",
@@ -68,7 +67,6 @@ const departmentSubfolders = {
   ],
 };
 
-// Departments that fall under the Deans folder
 const deanDepartments = [
   "Arts and Sciences",
   "Accountancy",
@@ -81,8 +79,44 @@ const deanDepartments = [
   "Teacher Education",
 ];
 
-// NEW: Banner image (placed in public/images/Faculty_Manager.png)
 const FACULTY_BANNER_IMG = "/images/Faculty_Manager.png";
+
+const ConfirmationModal = ({ message, onConfirm, onCancel }) => {
+  return (
+    <div className="students-modal-bg" style={{ zIndex: 1000 }}>
+      <div className="students-modal" style={{ maxWidth: 400, padding: 24 }} onClick={(e) => e.stopPropagation()}>
+        <p style={{ marginBottom: 24 }}>{message}</p>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              background: "#eee",
+              border: "none",
+              borderRadius: 8,
+              padding: "8px 20px",
+              fontWeight: 600,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              background: "#e11d48",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "8px 20px",
+              fontWeight: 600,
+            }}
+          >
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const Faculty = () => {
   const [search, setSearch] = useState("");
@@ -117,6 +151,17 @@ const Faculty = () => {
   const [addYearError, setAddYearError] = useState("");
   const [departments, setDepartments] = useState([]);
   const [departmentsError, setDepartmentsError] = useState("");
+  const [confirmModal, setConfirmModal] = useState({ show: false, action: null, message: "", label: "" });
+
+  // NEW: archive/restore modal states (same as Students.js)
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [archiveTargetYear, setArchiveTargetYear] = useState(null);
+  const [archiveConfirmText, setArchiveConfirmText] = useState("");
+  const [archiveInProgress, setArchiveInProgress] = useState(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [restoreTargetYear, setRestoreTargetYear] = useState(null);
+  const [restoreConfirmText, setRestoreConfirmText] = useState("");
+  const [restoreInProgress, setRestoreInProgress] = useState(false);
 
   const allYearFolders = [...yearFolders, ...customYears];
 
@@ -140,7 +185,6 @@ const Faculty = () => {
     fetchFaculty();
   }, []);
 
-  // NEW: Fetch departments/programs for assigning teaching positions
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
@@ -182,7 +226,6 @@ const Faculty = () => {
       setError("Birthdate cannot be in the future.");
       return;
     }
-    // Require assigned academic program for teaching positions
     if (form.department === "Academic / Teaching Positions") {
       if (!form.program) {
         setError("Please select a Program/Position for Teaching Positions.");
@@ -194,11 +237,9 @@ const Faculty = () => {
       }
     }
     const submitData = { ...form };
-    // Remove "SY " prefix if present
     if (submitData.academic_year.startsWith("SY ")) {
       submitData.academic_year = submitData.academic_year.replace(/^SY\s*/, "");
     }
-    // If user selected Deans, require and use dean_department as program
     if (submitData.program === 'Deans') {
       if (submitData.dean_department) {
         submitData.program = submitData.dean_department;
@@ -213,17 +254,17 @@ const Faculty = () => {
     setLoading(true);
     try {
       const res = await axios.post("/api/faculty", submitData);
-      // Merge server response with submitted data so optional fields (assigned_program, year, etc.) are kept
       const serverItem = res?.data?.faculty;
       const created = serverItem ? { ...submitData, ...serverItem } : submitData;
       setFaculty((prev) => ([...(prev || []), created]));
       setMessage("Faculty added successfully!");
       setShowModal(false);
       setForm(initialState);
-
-      // Use green notification for adding
       notifications.add(`Faculty member ${created.first_name} ${created.last_name} has been added successfully!`);
-      
+      window.dispatchEvent(new CustomEvent('facultyAdded', {
+        detail: created,
+        bubbles: true
+      }));
     } catch (err) {
       if (err.response?.data?.errors) {
         const errors = err.response.data.errors;
@@ -244,10 +285,8 @@ const Faculty = () => {
 
   const handleEdit = (member) => {
     const filledMember = { ...initialState, ...member };
-
     let department = filledMember.department;
     let program = filledMember.program;
-
     let foundDept = null;
     Object.entries(departmentSubfolders).forEach(([dept, programs]) => {
       if (programs.includes(filledMember.department)) {
@@ -259,18 +298,14 @@ const Faculty = () => {
         program = filledMember.program;
       }
     });
-
     if (foundDept) {
       department = foundDept;
     }
-
     if (departmentSubfolders[department] && !program) {
       if (departmentSubfolders[department].length === 1) {
         program = departmentSubfolders[department][0];
       }
     }
-
-    // Use dynamic departments list for Deans detection
     const deptNames = (departments || []).map(d => (d?.name ?? '').toLowerCase());
     let dean_department_val = "";
     if (deptNames.includes((program || '').toLowerCase())) {
@@ -278,7 +313,6 @@ const Faculty = () => {
       program = 'Deans';
       department = 'Major Leadership / Administrative Positions';
     }
-
     setEditForm({
       ...filledMember,
       department: department || "",
@@ -305,7 +339,6 @@ const Faculty = () => {
           return;
         }
       }
-      // Validation for assigned program on edit as well
       if (payload.department === "Academic / Teaching Positions") {
         if (!payload.program) {
           setError("Please select a Program/Position for Teaching Positions.");
@@ -322,10 +355,11 @@ const Faculty = () => {
       const refreshed = await axios.get("/api/faculty");
       setFaculty(refreshed.data.faculty || []);
       setEditModal(false);
-
-      // Use yellow notification for editing
       notifications.edit(`Faculty member ${payload.first_name} ${payload.last_name} has been updated successfully!`);
-      
+      window.dispatchEvent(new CustomEvent('facultyUpdated', {
+        detail: {...payload, id: editId},
+        bubbles: true
+      }));
     } catch (err) {
       setError(
         err.response?.data?.message ||
@@ -355,47 +389,96 @@ const Faculty = () => {
       return;
     }
     setCustomYears((prev) => [...prev, label]);
-    
-    // Use notifications.add instead of setAddYearSuccess
     notifications.add(`School Year folder ${label} added successfully!`);
-    
     setShowAddYearModal(false);
     setNewYearStart("");
   };
 
   const handleDeleteYear = (label) => {
-    const input = window.prompt(
-      `Type CONFIRM to permanently delete the folder "${label}". This cannot be undone.`
-    );
-    if (input && input.trim().toLowerCase() === "confirm") {
-      setCustomYears((prev) => prev.filter((y) => y !== label));
-      setYearMenuOpen(null);
-      
-      // Use notifications.delete instead of setDeleteYearSuccess
+    if (!archivedYears.includes(label)) {
       notifications.delete(`School Year folder ${label} deleted successfully!`);
     }
-  };
-
-  const handleArchiveYear = (label) => {
-    if (!archivedYears.includes(label)) {
-      setArchivedYears((prev) => [...prev, label]);
-      
-      // Use notifications.info instead of setArchiveYearSuccess
-      notifications.info(`School Year folder ${label} archived successfully!`);
-    }
+    setCustomYears((prev) => prev.filter((y) => y !== label));
     setYearMenuOpen(null);
+    setConfirmModal({ show: false, action: null, message: "", label: "" });
   };
 
-  const handleRestoreYear = (label) => {
-    const input = window.prompt(
-      `Type CONFIRM to restore the folder "${label}" from the archives.`
-    );
-    if (input && input.trim().toLowerCase() === "confirm") {
-      setArchivedYears((prev) => prev.filter((y) => y !== label));
+  // REFACTORED: archive helpers to match Students.js behavior
+  const archiveYear = (year) => {
+    setArchivedYears(prev => {
+      if (prev.includes(year)) return prev;
+      const updated = [...prev, year];
+      try { localStorage.setItem("archivedYears", JSON.stringify(updated)); } catch (_) {}
+      return updated;
+    });
+    notifications.info(`School Year folder ${year} archived successfully!`);
+  };
+
+  const requestArchiveYear = (year) => {
+    setArchiveTargetYear(year);
+    setArchiveConfirmText("");
+    setShowArchiveConfirm(true);
+  };
+
+  const confirmArchiveYear = async () => {
+    if (archiveConfirmText !== "Archive" || !archiveTargetYear) return;
+    setArchiveInProgress(true);
+    const label = archiveTargetYear; // capture before closing/reset
+    try {
+      archiveYear(label);
+      // Log to Recent Activities
+      window.dispatchEvent(new CustomEvent('facultyYearArchived', {
+        detail: { label },
+        bubbles: true
+      }));
+    } finally {
+      setArchiveInProgress(false);
+      setShowArchiveConfirm(false);
+      setArchiveTargetYear(null);
+    }
+  };
+
+  const requestRestoreYear = (year) => {
+    setRestoreTargetYear(year);
+    setRestoreConfirmText("");
+    setShowRestoreConfirm(true);
+  };
+
+  const confirmRestoreYear = async () => {
+    if (restoreConfirmText !== "Restore" || !restoreTargetYear) return;
+    setRestoreInProgress(true);
+    const label = restoreTargetYear;
+    try {
+      setArchivedYears(prev => prev.filter(y => y !== label));
       setRestoredYearLabel(label);
-      
-      // Use notifications.edit instead of setRestoreYearSuccess
       notifications.edit(`School Year folder ${label} has been restored from the archives!`);
+      // Log to Recent Activities
+      window.dispatchEvent(new CustomEvent('facultyYearRestored', {
+        detail: { label },
+        bubbles: true
+      }));
+    } finally {
+      setRestoreInProgress(false);
+      setShowRestoreConfirm(false);
+      setRestoreTargetYear(null);
+    }
+  };
+
+  const openConfirmModal = (action, label) => {
+    let message = "";
+    if (action === "archive") {
+      message = `Are you sure you want to archive the folder "${label}"?`;
+    } else if (action === "restore") {
+      message = `Are you sure you want to restore the folder "${label}" from the archives?`;
+    } else if (action === "delete") {
+      message = `Are you sure you want to permanently delete the folder "${label}"? This cannot be undone.`;
+    }
+    setConfirmModal({ show: true, action, message, label });
+  };
+
+  const confirmAction = () => {
+    if (confirmModal.action === "delete") {
+      handleDeleteYear(confirmModal.label);
     }
   };
 
@@ -432,10 +515,8 @@ const Faculty = () => {
   const isSearchActive = search.trim().length > 0;
 
   const facultyByYearDept = {};
-  // Build folders from the full dataset (not filtered by search)
   (faculty || []).forEach((mem) => {
     let yearFolder = "";
-
     let rawYear = (mem.academic_year || "").replace(/^SY\s*/, "");
     if (/^\d{4}-\d{4}$/.test(rawYear)) {
       yearFolder = `SY ${rawYear}`;
@@ -443,19 +524,14 @@ const Faculty = () => {
       const start = Number(rawYear);
       yearFolder = `SY ${start}-${start + 1}`;
     }
-
     if (!allYearFolders.includes(yearFolder)) return;
-
     const groupKey = mem.program && mem.program !== "" ? mem.program : mem.department;
-
     if (!facultyByYearDept[yearFolder]) {
       facultyByYearDept[yearFolder] = {};
     }
-
     if (!facultyByYearDept[yearFolder][groupKey]) {
       facultyByYearDept[yearFolder][groupKey] = [];
     }
-
     facultyByYearDept[yearFolder][groupKey].push(mem);
   });
 
@@ -471,10 +547,11 @@ const Faculty = () => {
       try {
         await axios.delete(`/api/faculty/${mem.id}`);
         setFaculty(faculty.filter(s => s.id !== mem.id));
-        
-        // Use notifications.delete instead of setFacultyDeleteSuccess
         notifications.delete(`Faculty member ${mem.first_name} ${mem.last_name} has been deleted!`);
-        
+        window.dispatchEvent(new CustomEvent('facultyDeleted', {
+          detail: mem,
+          bubbles: true
+        }));
       } catch (err) {
         notifications.info("Failed to delete faculty.");
       }
@@ -499,7 +576,6 @@ const Faculty = () => {
     return 0;
   };
 
-  // helper for case-insensitive compares
   const norm = (v) => (v ?? "").toString().trim().toLowerCase();
 
   const activePrograms = useMemo(
@@ -510,7 +586,6 @@ const Faculty = () => {
     [departments]
   );
 
-  // Utility: normalize a faculty record's year to an SY label
   const toYearLabel = (raw) => {
     const y = (raw || "").replace(/^SY\s*/, "");
     if (/^\d{4}-\d{4}$/.test(y)) return `SY ${y}`;
@@ -518,9 +593,7 @@ const Faculty = () => {
     return "";
   };
 
-  // Count faculty for a specific year + position + assigned program (Teaching Positions)
   const countByPositionProgram = (yearLabel, position, program) => {
-    // Count from full dataset so results aren't hidden by search
     return (faculty || []).filter(mem =>
       toYearLabel(mem.academic_year) === yearLabel &&
       norm(mem.program) === norm(position) &&
@@ -528,20 +601,16 @@ const Faculty = () => {
     ).length;
   };
 
-  // NEW: Count Deans per academic program (uses dynamic Departments.js list)
   const countDeansByProgram = (yearLabel, programName) => {
     return (faculty || []).filter(mem =>
       toYearLabel(mem.academic_year) === yearLabel &&
       norm(mem.department) === norm('Major Leadership / Administrative Positions') &&
-      // We store program as the chosen department for Deans; also accept dean_department just in case
       (norm(mem.program) === norm(programName) || norm(mem.dean_department) === norm(programName))
     ).length;
   };
 
-  // Current list for table view considering the new nested level
   const currentFacultyList = useMemo(() => {
        if (!selectedYear) return [];
-       // Teaching positions: position + assigned program
        if (selectedDept === "Academic / Teaching Positions" && selectedSubDept && selectedProgram) {
           return (faculty || []).filter(mem =>
                toYearLabel(mem.academic_year) === selectedYear &&
@@ -549,7 +618,6 @@ const Faculty = () => {
                norm(mem.assigned_program) === norm(selectedProgram)
            );
        }
-       // Deans: dynamic department folders
        if (selectedDept === "Major Leadership / Administrative Positions" && selectedSubDept === "Deans" && selectedProgram) {
           return (faculty || []).filter(mem =>
               toYearLabel(mem.academic_year) === selectedYear &&
@@ -593,7 +661,6 @@ const Faculty = () => {
               alt="Faculty Management"
               style={{ width: "70%", height: "70%", objectFit: "contain" }}
               onError={(e) => {
-                // Hide image container if not found
                 e.currentTarget.parentElement.style.display = "none";
               }}
             />
@@ -713,7 +780,6 @@ const Faculty = () => {
       </div>
       
       <div className="students-list-card">
-        {/* Main Folders UI */}
         {!selectedYear && !showArchived && !isSearchActive && (
           <div className="students-folders-container">
             <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
@@ -773,13 +839,13 @@ const Faculty = () => {
                         >
                           <div
                             className="menu-item"
-                            onClick={() => handleArchiveYear(label)}
+                            onClick={() => requestArchiveYear(label)}
                           >
                             Archive
                           </div>
                           <div
                             className="menu-item danger"
-                            onClick={() => handleDeleteYear(label)}
+                            onClick={() => openConfirmModal("delete", label)}
                           >
                             Delete
                           </div>
@@ -793,7 +859,6 @@ const Faculty = () => {
           </div>
         )}
 
-        {/* Archived Folders UI */}
         {!selectedYear && showArchived && (
           <div className="students-folders-container">
             <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
@@ -816,7 +881,7 @@ const Faculty = () => {
                   </div>
                   <button
                     className="students-folder-restore-btn"
-                    onClick={() => handleRestoreYear(label)}
+                    onClick={() => requestRestoreYear(label)}
                   >
                     Restore
                   </button>
@@ -826,7 +891,6 @@ const Faculty = () => {
           </div>
         )}
 
-        {/* Department Folders UI */}
         {selectedYear && !selectedDept && (
           <div>
             <div
@@ -854,7 +918,6 @@ const Faculty = () => {
                 Back
               </button>
             </div>
-            {/* Department folders in a vertical list with header */}
             <div
               style={{
                 background: "#fff",
@@ -922,35 +985,33 @@ const Faculty = () => {
                     }}
                   >
                     {
-                                            departmentSubfolders[dept]
-                                                ? departmentSubfolders[dept].reduce((sum, prog) => {
-                                                        if (prog === 'Deans') {
-                                                            // include all Deans across active programs
-                                                            const deansTotal = activePrograms.reduce(
-                                                                (s, p) => s + countDeansByProgram(selectedYear, p),
-                                                                0
-                                                            );
-                                                            return sum + deansTotal;
-                                                        }
-                                                        const v = (facultyByYearDept[selectedYear] &&
-                                                            facultyByYearDept[selectedYear][prog])
-                                                            ? facultyByYearDept[selectedYear][prog].length
-                                                            : 0;
-                                                        return sum + v;
-                                                  }, 0)
-                                                : (facultyByYearDept[selectedYear] &&
-                                                        facultyByYearDept[selectedYear][dept])
-                                                ? facultyByYearDept[selectedYear][dept].length
-                                                : 0
-                                        }
-                                    </span>
-                                </div>
-                            ))}
+                      departmentSubfolders[dept]
+                          ? departmentSubfolders[dept].reduce((sum, prog) => {
+                                if (prog === 'Deans') {
+                                  const deansTotal = activePrograms.reduce(
+                                      (s, p) => s + countDeansByProgram(selectedYear, p),
+                                      0
+                                  );
+                                  return sum + deansTotal;
+                                }
+                                const v = (facultyByYearDept[selectedYear] &&
+                                    facultyByYearDept[selectedYear][prog])
+                                    ? facultyByYearDept[selectedYear][prog].length
+                                    : 0;
+                                return sum + v;
+                          }, 0)
+                          : (facultyByYearDept[selectedYear] &&
+                                  facultyByYearDept[selectedYear][dept])
+                          ? facultyByYearDept[selectedYear][dept].length
+                          : 0
+                    }
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* Subfolders for departments with programs */}
         {selectedYear && departmentSubfolders[selectedDept] && !selectedSubDept && (
           <div>
             <div
@@ -1002,7 +1063,6 @@ const Faculty = () => {
                 <span>Number of Faculty</span>
               </div>
               {departmentSubfolders[selectedDept].map((sub) => {
-                // For Deans, sum across dynamic active programs
                 const count = sub === 'Deans'
                   ? activePrograms.reduce((sum, p) => sum + countDeansByProgram(selectedYear, p), 0)
                   : ((facultyByYearDept[selectedYear] && facultyByYearDept[selectedYear][sub])
@@ -1057,7 +1117,6 @@ const Faculty = () => {
           </div>
         )}
 
-        {/* NEW: When a teaching position is selected, show the program folders from Departments */}
         {selectedYear &&
           selectedDept === "Academic / Teaching Positions" &&
           selectedSubDept &&
@@ -1161,7 +1220,6 @@ const Faculty = () => {
           </div>
         )}
 
-        {/* NEW: When Deans is selected, show dynamic department folders from Departments.js */}
         {selectedYear &&
           selectedDept === "Major Leadership / Administrative Positions" &&
           selectedSubDept === "Deans" &&
@@ -1265,12 +1323,10 @@ const Faculty = () => {
           </div>
         )}
 
-        {/* Faculty List (now also supports position + program level) */}
         {selectedYear && (
                     (!departmentSubfolders[selectedDept] && selectedDept) ||
                     (selectedDept === "Academic / Teaching Positions" && selectedSubDept && selectedProgram) ||
                     (selectedDept === "Major Leadership / Administrative Positions" && selectedSubDept === "Deans" && selectedProgram) ||
-                    // Fix: don't render the table when inside Deans until a department is chosen
                     (selectedSubDept && 
                      selectedDept !== "Academic / Teaching Positions" && 
                      selectedSubDept !== "Deans")
@@ -1303,7 +1359,7 @@ const Faculty = () => {
                                 }}
                                 onClick={() => {
                                     if (selectedProgram) {
-                                        setSelectedProgram(null); // back to program list under the position
+                                        setSelectedProgram(null);
                                     } else if (selectedSubDept && deanDepartments.includes(selectedSubDept)) {
                                         setSelectedSubDept('Deans');
                                     } else if (selectedSubDept) {
@@ -1422,7 +1478,6 @@ const Faculty = () => {
                     </div>
                 )}
 
-				{/* Show filtered faculty list if searching */}
 				{!selectedYear && !showArchived && isSearchActive && (
 					<div>
 						<div
@@ -1448,9 +1503,9 @@ const Faculty = () => {
 									<div className="students-list-row" key={mem.id}>
 										<div className="students-list-student">
 											<img
-												src={mem.avatar || "/avatar1.png"}
-												alt={mem.first_name + " " + mem.last_name}
-												className="students-list-avatar"
+											 src={mem.avatar || "/avatar1.png"}
+											 alt={mem.first_name + " " + mem.last_name}
+											 className="students-list-avatar"
 											/>
 											<div>
 												<div className="students-list-name">
@@ -1510,12 +1565,12 @@ const Faculty = () => {
 												? new Date(mem.updated_at).toLocaleString()
 												: ""}
 										</div>
-										<div className="students-list-actions">
+										<div className="students-list-actions" >
 											<button
-											 className="students-action-btn"
-											 title="Edit"
-											 onClick={() => handleEdit(mem)}
-											 style={{ marginRight: 8 }}
+												className="students-action-btn"
+												title="Edit"
+												onClick={() => handleEdit(mem)}
+												style={{ marginRight: 8 }}
 											>
 												<svg
 													width="18"
@@ -1532,8 +1587,8 @@ const Faculty = () => {
 											<button
 												className="students-action-btn"
 												title="Delete"
-											 onClick={() => handleDeleteClick(mem)}
-											 style={{ color: "#e11d48" }}
+												onClick={() => handleDeleteClick(mem)}
+												style={{ color: "#e11d48" }}
 											>
 												<svg width="18" height="18" fill="none" viewBox="0 0 24 24">
 													<path
@@ -1546,26 +1601,25 @@ const Faculty = () => {
 												</svg>
 											</button>
 										</div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div
-                                    style={{
-                                        padding: 32,
-                                        color: "#888",
-                                        textAlign: "center",
-                                    }}
-                                >
-                                    No faculty found.
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
+									</div>
+								))
+							) : (
+								<div
+									style={{
+										padding: 32,
+										color: "#888",
+										textAlign: "center",
+									}}
+								>
+									No faculty found.
+								</div>
+							)}
+						</div>
+					</div>
+				)}
 
 			</div>
 
-			{/* Modal for Add Faculty */}
 			{showModal && (
 				<div className="students-modal-bg" onClick={() => setShowModal(false)}>
 					<div
@@ -1633,7 +1687,6 @@ const Faculty = () => {
 									))}
 								</select>
 							</div>
-							{/* Show program dropdown if department has subfolders */}
 							{departmentSubfolders[form.department] && (
 								<div className="students-modal-row">
 									<label>
@@ -1656,7 +1709,6 @@ const Faculty = () => {
 								</div>
 							)}
 
-							{/* If user selected the Deans program, show a specific dean-department select */}
 							{form.program === 'Deans' && (
 								<div className="students-modal-row">
 									<label>
@@ -1679,7 +1731,6 @@ const Faculty = () => {
 									</select>
 								</div>
 							)}
-					{/* NEW: Assigned Academic Program from Departments.js (only for Teaching Positions) */}
 					{form.department === "Academic / Teaching Positions" && form.program && (
 						<div className="students-modal-row">
 							<label>
@@ -1762,10 +1813,9 @@ const Faculty = () => {
 									type="text"
 									name="phone"
 									value={form.phone}
-									onChange={handleChange}
+								 onChange={handleChange}
 								/>
 							</div>
-							{/* Course ID removed per request */}
 							<div className="students-modal-row">
 								<label>
 									Status <span style={{ color: "#e11d48" }}>*</span>
@@ -1831,7 +1881,6 @@ const Faculty = () => {
 				</div>
 			)}
 
-			{/* Modal for Edit Faculty */}
 			{editModal && (
 				<div className="students-modal-bg" onClick={() => setEditModal(false)}>
 					<div
@@ -1860,14 +1909,11 @@ const Faculty = () => {
 							}}
 						>
 							{Object.entries(initialState).map(([key, _]) => {
-								// Skip the course_id field
 								if (key === "course_id") return null;
 								
-								// Only show dean_department when editing a Deans program
 								if (key === 'dean_department' && editForm.program !== 'Deans') {
 									return null;
 								}
-								// Only show assigned_program for Teaching Positions
 								if (key === 'assigned_program' && editForm.department !== 'Academic / Teaching Positions') {
 									return null;
 								}
@@ -1908,7 +1954,7 @@ const Faculty = () => {
 										) : key === "program" ? (
 											<select
 												name={key}
-												value={editForm[key] || ""}
+											value={editForm[key] || ""}
 												onChange={(e) =>
 													setEditForm({ ...editForm, [key]: e.target.value })
 												}
@@ -2043,7 +2089,6 @@ const Faculty = () => {
         </div>
     )}
 
-    {/* Add SY Folder Modal */}
     {showAddYearModal && (
         <div className="students-modal-bg" onClick={() => setShowAddYearModal(false)}>
             <div className="students-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 400 }}>
@@ -2102,6 +2147,200 @@ const Faculty = () => {
             </div>
         </div>
     )}
+
+    {confirmModal.show && (
+        <ConfirmationModal
+          message={confirmModal.message}
+          onConfirm={confirmAction}
+          onCancel={() => setConfirmModal({ show: false, action: null, message: "", label: "" })}
+        />
+      )}
+
+      {showArchiveConfirm && (
+        <div
+          className="students-modal-bg"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2500
+          }}
+          onClick={() => !archiveInProgress && setShowArchiveConfirm(false)}
+        >
+          <div
+            className="students-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              width: "100%",
+              maxWidth: 440,
+              padding: "32px 36px",
+              borderRadius: 22,
+              boxShadow: "0 8px 28px rgba(0,0,0,.18)"
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>Archive School Year Folder</h3>
+            <div style={{ fontSize: 14, lineHeight: 1.5, color: "#374151", marginBottom: 18 }}>
+              <br />
+              <b>{archiveTargetYear}</b>
+              <br />
+              <br />
+              Type <code style={{ background: "#f3f4f6", padding: "2px 4px", borderRadius: 4 }}>Archive</code> to confirm.
+            </div>
+            <input
+              autoFocus
+              type="text"
+              placeholder='Type "Archive" to confirm'
+              value={archiveConfirmText}
+              onChange={(e) => setArchiveConfirmText(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #d1d5db",
+                marginBottom: 20,
+                fontSize: 14
+              }}
+              disabled={archiveInProgress}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setShowArchiveConfirm(false)}
+                disabled={archiveInProgress}
+                style={{
+                  background: "#e5e7eb",
+                  border: "none",
+                  padding: "8px 18px",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor: archiveInProgress ? "not-allowed" : "pointer"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmArchiveYear}
+                disabled={archiveConfirmText !== "Archive" || archiveInProgress}
+                style={{
+                  background:
+                    archiveConfirmText === "Archive" && !archiveInProgress
+                      ? "#dc2626"
+                      : "#fca5a5",
+                  color: "#fff",
+                  border: "none",
+                  padding: "8px 22px",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor:
+                    archiveConfirmText === "Archive" && !archiveInProgress
+                      ? "pointer"
+                      : "not-allowed"
+                }}
+              >
+                {archiveInProgress ? "Archiving..." : "Archive"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRestoreConfirm && (
+        <div
+          className="students-modal-bg"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2500
+          }}
+          onClick={() => !restoreInProgress && setShowRestoreConfirm(false)}
+        >
+          <div
+            className="students-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              width: "100%",
+              maxWidth: 440,
+              padding: "32px 36px",
+              borderRadius: 22,
+              boxShadow: "0 8px 28px rgba(0,0,0,.18)"
+            }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>Restore School Year Folder</h3>
+            <div style={{ fontSize: 14, lineHeight: 1.5, color: "#374151", marginBottom: 18 }}>
+              <br />
+              <b>{restoreTargetYear}</b>
+              <br />
+              <br />
+              Type <code style={{ background: "#f3f4f6", padding: "2px 4px", borderRadius: 4 }}>Restore</code> to confirm.
+            </div>
+            <input
+              autoFocus
+              type="text"
+              placeholder='Type "Restore" to confirm'
+              value={restoreConfirmText}
+              onChange={(e) => setRestoreConfirmText(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: "1px solid #d1d5db",
+                marginBottom: 20,
+                fontSize: 14
+              }}
+              disabled={restoreInProgress}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                type="button"
+                onClick={() => setShowRestoreConfirm(false)}
+                disabled={restoreInProgress}
+                style={{
+                  background: "#e5e7eb",
+                  border: "none",
+                  padding: "8px 18px",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor: restoreInProgress ? "not-allowed" : "pointer"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmRestoreYear}
+                disabled={restoreConfirmText !== "Restore" || restoreInProgress}
+                style={{
+                  background:
+                    restoreConfirmText === "Restore" && !restoreInProgress
+                      ? "#16a34a"
+                      : "#bbf7d0",
+                  color: "#fff",
+                  border: "none",
+                  padding: "8px 22px",
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  cursor:
+                    restoreConfirmText === "Restore" && !restoreInProgress
+                      ? "pointer"
+                      : "not-allowed"
+                }}
+              >
+                {restoreInProgress ? "Restoring..." : "Restore"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 		</div>
 	);
 };

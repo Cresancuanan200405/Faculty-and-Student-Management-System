@@ -131,6 +131,12 @@ const Departments = () => {
         if (response.data.success) {
           await loadDepartments();
           notifications.edit(`Department "${payload.name}" has been updated successfully!`);
+          
+          // Dispatch event for dashboard activity tracking
+          window.dispatchEvent(new CustomEvent('departmentUpdated', {
+            detail: { ...payload, id: editingDepartment.id },
+            bubbles: true
+          }));
         }
       } else {
         // Adding new department
@@ -139,6 +145,12 @@ const Departments = () => {
         if (response.data.success) {
           await loadDepartments();
           notifications.add(`Department "${payload.name}" has been created successfully!`);
+          
+          // Dispatch event for dashboard activity tracking
+          window.dispatchEvent(new CustomEvent('departmentAdded', {
+            detail: { ...payload, id: response.data.department?.id || Date.now() },
+            bubbles: true
+          }));
         }
       }
       
@@ -161,6 +173,12 @@ const Departments = () => {
       if (response.data.success) {
         await loadDepartments();
         notifications.delete(`Department "${deptName}" has been deleted!`);
+        
+        // Dispatch event for dashboard activity tracking
+        window.dispatchEvent(new CustomEvent('departmentDeleted', {
+          detail: departmentToDelete,
+          bubbles: true
+        }));
       }
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Failed to delete department';

@@ -364,36 +364,99 @@
   margin-top: 16px;
 }
 
-.ra-activity-card {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 16px;
+.ra-empty {
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 32px;
+  text-align: center;
+  color: #6b7280;
+  
+  .ra-empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 16px;
+  }
+  
+  .ra-empty-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  
+  .ra-empty-desc {
+    font-size: 0.9rem;
+  }
+}
+
+.ra-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ra-item {
+  display: flex;
   align-items: center;
+  padding: 12px;
   background: white;
-  border-radius: 12px;
-  padding: 16px 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.1);
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   transition: transform 0.2s, box-shadow 0.2s;
-  border: 1px solid #f1f5f9;
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+  }
 }
 
-.ra-activity-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.05);
+.ra-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  flex-shrink: 0;
+  font-size: 1.2rem;
 }
 
-.ra-activity-type {
-  white-space: nowrap;
+.ra-details {
+  flex: 1;
 }
 
-.ra-activity-desc {
+.ra-description {
   font-weight: 500;
-  color: #1e293b;
+  margin-bottom: 4px;
+  color: #1f2937;
 }
 
-.ra-activity-time {
-  color: #94a3b8;
-  font-size: 0.85rem;
+.ra-time {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.ra-controls {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.ra-button {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #4b5563;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  
+  &:hover {
+    background: #e5e7eb;
+    color: #1f2937;
+  }
 }
 
 @keyframes pulse {
