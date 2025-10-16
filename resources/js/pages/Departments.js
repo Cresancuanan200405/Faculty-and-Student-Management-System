@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import '../../sass/Departments.scss';
+import notifications from '../utils/notifications';
+
+const DEPARTMENT_BANNER_IMG = "/images/Department_Manager.png";
 
 const initialForm = {
   name: '',
@@ -21,7 +24,8 @@ const Departments = () => {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('All Status');
-  const [activeTab, setActiveTab] = useState('Program Overview');
+  // Default to Program List
+  const [activeTab, setActiveTab] = useState('Program List');
   const [editingDepartment, setEditingDepartment] = useState(null);
   const [selectedYear, setSelectedYear] = useState(null);
   const [selectedDept, setSelectedDept] = useState(null);
@@ -54,10 +58,32 @@ const Departments = () => {
     }
   };
 
+  // Fetch students for per-department counts and views
+  const loadStudents = async () => {
+    try {
+      const { data } = await axios.get('/api/students');
+      setStudents(data.students || []);
+    } catch (err) {
+      console.error('Failed to fetch students:', err);
+    }
+  };
+
+  // Fetch faculty (added for stats)
+  const loadFaculty = async () => {
+    try {
+      const { data } = await axios.get('/api/faculty');
+      setFaculty(data.faculty || []);
+    } catch (err) {
+      console.error('Failed to fetch faculty:', err);
+    }
+  };
+
   useEffect(() => {
     loadDepartments();
     loadCourses();
-    // Optionally, you can add an event listener here to refresh courses after course creation.
+    loadStudents();
+    loadFaculty();
+    // Optionally, add event listeners here to refresh after external changes
   }, []);
   
   useEffect(() => { 
@@ -97,26 +123,29 @@ const Departments = () => {
       };
 
       let response;
+      
       if (editingDepartment) {
+        // Editing existing department
         response = await axios.put(`/api/departments/${editingDepartment.id}`, payload);
-      } else {
-        response = await axios.post('/api/departments', payload);
-      }
-
-      if (response.data.success) {
-        await loadDepartments(); // Reload the list
         
-        const message = editingDepartment ? 
-          `Department "${payload.name}" has been updated successfully!` :
-          `Department "${payload.name}" has been created successfully!`;
-          
-        alert(message);
-        resetModal();
+        if (response.data.success) {
+          await loadDepartments();
+          notifications.edit(`Department "${payload.name}" has been updated successfully!`);
+        }
+      } else {
+        // Adding new department
+        response = await axios.post('/api/departments', payload);
+        
+        if (response.data.success) {
+          await loadDepartments();
+          notifications.add(`Department "${payload.name}" has been created successfully!`);
+        }
       }
       
+      resetModal();
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Failed to save department';
-      alert(`Error: ${errorMessage}`);
+      notifications.info(`Error: ${errorMessage}`); // Using info for general errors
     } finally { 
       setSaving(false); 
     }
@@ -125,14 +154,17 @@ const Departments = () => {
   const deleteDepartment = async id => {
     if (!confirm('Are you sure you want to delete this department? This action cannot be undone.')) return;
     try {
+      const departmentToDelete = departments.find(d => d.id === id);
+      const deptName = departmentToDelete?.name || 'Unknown department';
+      
       const response = await axios.delete(`/api/departments/${id}`);
       if (response.data.success) {
-        await loadDepartments(); // Reload the list
-        alert('Department deleted successfully!');
+        await loadDepartments();
+        notifications.delete(`Department "${deptName}" has been deleted!`);
       }
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Failed to delete department';
-      alert(`Error: ${errorMessage}`);
+      notifications.info(`Error: ${errorMessage}`);
     }
   };
 
@@ -193,10 +225,36 @@ const Departments = () => {
     <div className="departments-root">
       {/* Banner section */}
       <div className="departments-banner">
-        <div className="departments-banner-content">
-          <div className="departments-banner-title">Program Management</div>
-          <div className="departments-banner-sub">
-            FSUU - Manage academic programs and departments
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              background: "#6366f1",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 2px 6px #0002",
+              overflow: "hidden",
+              flexShrink: 0,
+              marginLeft: -16
+            }}
+          >
+            <img
+              src={DEPARTMENT_BANNER_IMG}
+              alt="Program Management"
+              style={{ width: "70%", height: "70%", objectFit: "contain" }}
+              onError={(e) => {
+                e.currentTarget.parentElement.style.display = "none";
+              }}
+            />
+          </div>
+          <div className="departments-banner-content">
+            <div className="departments-banner-title">Program Management</div>
+            <div className="departments-banner-sub">
+              FSUU - Manage academic programs and departments
+            </div>
           </div>
         </div>
       </div>

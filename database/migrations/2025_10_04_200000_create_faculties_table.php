@@ -4,39 +4,25 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class CreateFacultiesTable extends Migration
+return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     *
-     * @return void
-     */
-    public function up()
+    public function up(): void
     {
         Schema::create('faculties', function (Blueprint $table) {
             $table->id();
-            $table->string('first_name');
-            $table->string('last_name');
-            $table->string('email')->nullable();
-            $table->string('gender')->nullable();
-            $table->date('birthdate')->nullable();
-            $table->string('phone')->nullable();
-            $table->string('department')->nullable();
-            $table->string('program')->nullable();
+            $table->string('name');
+            $table->string('email');
+            $table->string('phone');
+            $table->string('program')->nullable();              // e.g., Professor, Instructor
+            $table->string('assigned_program')->nullable();     // e.g., Accountancy, Nursing
+            $table->string('dean_department')->nullable();      // when program is Deans
             $table->string('academic_year')->nullable();
-            $table->string('status')->nullable();
-            $table->softDeletes();
             $table->timestamps();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     *
-     * @return void
-     */
-    public function down()
+    public function down(): void
     {
         Schema::dropIfExists('faculties');
     }
-}
+};

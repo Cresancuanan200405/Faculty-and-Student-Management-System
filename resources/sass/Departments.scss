@@ -43,24 +43,19 @@
 }
 
 .departments-stat-card {
-  background: linear-gradient(135deg, #e8f5ff 0%, #f0f9ff 100%);
+  /* base card */
+  background: #ffffff;
   border-radius: 1rem;
   padding: 1.5rem;
   box-shadow: 0 2px 12px rgba(44, 62, 80, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.8);
-
-  &:nth-child(2) {
-    background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
-  }
-
-  &:nth-child(3) {
-    background: linear-gradient(135deg, #fef3c7 0%, #fef9e7 100%);
-  }
-
-  &:nth-child(4) {
-    background: linear-gradient(135deg, #e8f5ff 0%, #f0f9ff 100%);
-  }
 }
+
+/* Pastel variants (same palette as Courses) */
+.departments-stat-card.bg-sky   { background: #eef6ff; border-color: #dbeafe; }
+.departments-stat-card.bg-mint  { background: #effcf6; border-color: #d1fae5; }
+.departments-stat-card.bg-sun   { background: #fff6dc; border-color: #fde68a; }
+.departments-stat-card.bg-sky-2 { background: #f0f7ff; border-color: #e0ecff; }
 
 .departments-stat-value {
   font-size: 2rem;

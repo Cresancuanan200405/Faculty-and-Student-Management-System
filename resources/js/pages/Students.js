@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import axios from "../axios";
+import notifications from '../utils/notifications'; // Import notifications utility
 import "../../sass/Students.scss";
 
 // Banner image (placed in public/images/Student_Manager.png)
@@ -85,21 +86,14 @@ const Students = () => {
   });
   const [showAddYearModal, setShowAddYearModal] = useState(false);
   const [newYearStart, setNewYearStart] = useState("");
-  const [addYearSuccess, setAddYearSuccess] = useState(false);
   const [yearMenuOpen, setYearMenuOpen] = useState(null);
   const yearMenuRef = useRef(null);
   const [archivedYears, setArchivedYears] = useState(() => {
     const saved = localStorage.getItem("archivedYears");
     return saved ? JSON.parse(saved) : [];
   });
-  const [archiveYearSuccess, setArchiveYearSuccess] = useState(false);
-  const [restoreYearSuccess, setRestoreYearSuccess] = useState(false);
   const [restoredYearLabel, setRestoredYearLabel] = useState("");
   const [addYearError, setAddYearError] = useState("");
-  const [deleteYearSuccess, setDeleteYearSuccess] = useState(false);
-  const [studentAddSuccess, setStudentAddSuccess] = useState(false);
-  const [studentDeleteSuccess, setStudentDeleteSuccess] = useState(false);
-  const [studentEditSuccess, setStudentEditSuccess] = useState(false);
   const [departmentsData, setDepartmentsData] = useState([]);
   const [coursesData, setCoursesData] = useState([]);
   // NEW: course selection popup state
@@ -112,56 +106,6 @@ const Students = () => {
   const [archiveInProgress, setArchiveInProgress] = useState(false);
 
   const allYearFolders = [...yearFolders, ...customYears];
-
-  // Success message timeouts
-  useEffect(() => {
-    if (addYearSuccess) {
-      const t = setTimeout(() => setAddYearSuccess(false), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [addYearSuccess]);
-
-  useEffect(() => {
-    if (archiveYearSuccess) {
-      const t = setTimeout(() => setArchiveYearSuccess(false), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [archiveYearSuccess]);
-
-  useEffect(() => {
-    if (restoreYearSuccess) {
-      const t = setTimeout(() => setRestoreYearSuccess(false), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [restoreYearSuccess]);
-
-  useEffect(() => {
-    if (deleteYearSuccess) {
-      const t = setTimeout(() => setDeleteYearSuccess(false), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [deleteYearSuccess]);
-
-  useEffect(() => {
-    if (studentAddSuccess) {
-      const t = setTimeout(() => setStudentAddSuccess(false), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [studentAddSuccess]);
-
-  useEffect(() => {
-    if (studentDeleteSuccess) {
-      const t = setTimeout(() => setStudentDeleteSuccess(false), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [studentDeleteSuccess]);
-
-  useEffect(() => {
-    if (studentEditSuccess) {
-      const t = setTimeout(() => setStudentEditSuccess(false), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [studentEditSuccess]);
 
   useEffect(() => {
     localStorage.setItem("customYears", JSON.stringify(customYears));
@@ -271,26 +215,25 @@ const Students = () => {
       setCoursesData(courseRes.data.courses || []);
 
       // Update students list with the new student
+      const newStudent = res.data.student || submitData;
       setStudents((prev) => [
         ...(prev || []),
-        res.data.student || submitData
+        newStudent
       ]);
-      setMessage("Student added successfully!");
+      
+      // Replace message and success state with notifications.add
+      notifications.add(`Student ${submitData.first_name} ${submitData.last_name} added successfully!`);
+      
       setShowModal(false);
       setForm(initialState);
-      setStudentAddSuccess(true);
+      
     } catch (err) {
       if (err.response?.data?.errors) {
         const errors = err.response.data.errors;
-        setError(
-          Object.values(errors)
-            .map((arr) => arr.join(" "))
-            .join(" ")
-        );
+        const errorMessage = Object.values(errors).map((arr) => arr.join(" ")).join(" ");
+        notifications.info(`Error: ${errorMessage}`);
       } else {
-        setError(
-          err.response?.data?.message || "Failed to add student."
-        );
+        notifications.info(err.response?.data?.message || "Failed to add student.");
       }
     }
     setLoading(false);
@@ -344,14 +287,16 @@ const Students = () => {
       const refreshed = await axios.get("/api/students");
       setStudents(refreshed.data.students || []);
       setEditModal(false);
-      setStudentEditSuccess(true);
+      
+      // Replace success state with notifications.edit
+      notifications.edit(`Student ${editForm.first_name} ${editForm.last_name} updated successfully!`);
+      
     } catch (err) {
-      setError(
-        err.response?.data?.message ||
+      const errorMessage = err.response?.data?.message ||
         (err.response?.data?.errors
           ? Object.values(err.response.data.errors).flat().join(" ")
-          : "Failed to update student.")
-      );
+          : "Failed to update student.");
+      notifications.info(`Error: ${errorMessage}`);
     } finally {
       setEditLoading(false);
     }
@@ -375,7 +320,10 @@ const Students = () => {
       return;
     }
     setCustomYears((prev) => [...prev, label]);
-    setAddYearSuccess(true);
+    
+    // Replace success state with notifications.add
+    notifications.add(`School Year folder ${label} added successfully!`);
+    
     setShowAddYearModal(false);
     setNewYearStart("");
   };
@@ -387,7 +335,9 @@ const Students = () => {
     if (input && input.trim().toLowerCase() === "confirm") {
       setCustomYears((prev) => prev.filter((y) => y !== label));
       setYearMenuOpen(null);
-      setDeleteYearSuccess(true);
+      
+      // Replace success state with notifications.delete
+      notifications.delete(`School Year folder ${label} deleted successfully!`);
     }
   };
 
@@ -400,8 +350,9 @@ const Students = () => {
       } catch (_) {}
       return updated;
     });
-    setArchiveYearSuccess(true);
-    setTimeout(() => setArchiveYearSuccess(false), 3000);
+    
+    // Replace success state with notifications.info
+    notifications.info(`School Year folder ${year} archived successfully!`);
   };
 
   const requestArchiveYear = (year) => {
@@ -425,7 +376,6 @@ const Students = () => {
   const handleArchiveYear = (label) => {
     if (!archivedYears.includes(label)) {
       setArchivedYears((prev) => [...prev, label]);
-      setArchiveYearSuccess(true);
     }
     setYearMenuOpen(null);
   };
@@ -437,7 +387,9 @@ const Students = () => {
     if (input && input.trim().toLowerCase() === "confirm") {
       setArchivedYears((prev) => prev.filter((y) => y !== label));
       setRestoredYearLabel(label);
-      setRestoreYearSuccess(true);
+      
+      // Replace success state with notifications.edit
+      notifications.edit(`School Year folder ${label} has been restored from the archives!`);
     }
   };
 
@@ -513,9 +465,12 @@ const Students = () => {
       try {
         await axios.delete(`/api/students/${student.id}`);
         setStudents(students.filter(s => s.id !== student.id));
-        setStudentDeleteSuccess(true);
+        
+        // Replace success state with notifications.delete
+        notifications.delete(`Student ${student.first_name} ${student.last_name} deleted successfully!`);
+        
       } catch (err) {
-        alert("Failed to delete student.");
+        notifications.info("Failed to delete student.");
       }
     }
   };
@@ -592,46 +547,6 @@ const Students = () => {
 
   return (
     <div className="students-root">
-      {/* Success Popups */}
-      {deleteYearSuccess && (
-        <div className="students-success-message delete" style={{ background: "#fee2e2", color: "#b91c1c" }}>
-          School Year folder deleted successfully!
-        </div>
-      )}
-      {studentAddSuccess && (
-        <div className="students-success-message add" style={{ background: "#dcfce7", color: "#15803d" }}>
-          Student added successfully!
-        </div>
-      )}
-      {studentDeleteSuccess && (
-        <div className="students-success-message delete" style={{ background: "#fee2e2", color: "#b91c1c" }}>
-          Student deleted successfully!
-        </div>
-      )}
-      {studentEditSuccess && (
-        <div className="students-success-message edit" style={{ background: "#fef9c3", color: "#b45309" }}>
-          Student updated successfully!
-        </div>
-      )}
-      {archiveYearSuccess && (
-        <div
-          style={{
-            position: "fixed",
-            top: 20,
-            right: 20,
-            background: "#047857",
-            color: "#fff",
-            padding: "10px 18px",
-            borderRadius: 10,
-            fontSize: 14,
-            boxShadow: "0 4px 14px rgba(0,0,0,.15)",
-            zIndex: 3000
-          }}
-        >
-          Folder archived successfully.
-        </div>
-      )}
-
       {/* Archive confirmation modal */}
       {showArchiveConfirm && (
         <div
@@ -873,23 +788,6 @@ const Students = () => {
       </div>
       
       <div className="students-list-card">
-        {/* Success messages */}
-        {addYearSuccess && (
-          <div className="students-success-message add">
-            School Year folder added successfully!
-          </div>
-        )}
-        {archiveYearSuccess && (
-          <div className="students-success-message archive">
-            School Year folder archived successfully!
-          </div>
-        )}
-        {restoreYearSuccess && (
-          <div className="students-success-message restore" style={{ background: "#fef9c3", color: "#b45309" }}>
-            Folder <b>{restoredYearLabel}</b> has been restored from the archives!
-          </div>
-        )}
-
         {/* Main Folders UI */}
         {!selectedYear && !showArchived && !isSearchActive && (
           <div className="students-folders-container">
@@ -1634,9 +1532,7 @@ const Students = () => {
                     </div>
                     <div className="students-list-updated">
                       <span className="students-list-updated-icon">🕒</span>
-                      {stu.updated_at
-                        ? new Date(stu.updated_at).toLocaleString()
-                        : ""}
+                      {stu.updated_at ? new Date(stu.updated_at).toLocaleString() : ""}
                     </div>
                     <div className="students-list-actions">
                       <button
@@ -2227,7 +2123,7 @@ const Students = () => {
                         borderRadius: 8,
                         fontWeight: 600,
                         fontSize: ".8rem"
-                      }}
+                                           }}
                     >
                       Choose
                     </button>

@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import notifications from '../utils/notifications';
 import '../../sass/Courses.scss';
 
-// Modified initialForm without academic_year
+const COURSE_BANNER_IMG = "/images/Course_Manager.png";
+
 const initialForm = {
   name: '',
   description: '',
@@ -169,6 +171,36 @@ const Courses = () => {
     })).sort((a, b) => a.name.localeCompare(b.name));
   }, [faculty]);
 
+  // Count helpers: students in this course, faculty assigned to this program
+  const countStudentsForCourse = (course) => {
+    const courseName = (course?.name || '').trim().toLowerCase();
+    const deptName = (course?.program || '').trim().toLowerCase();
+    return students.filter(s => {
+      const sDept = (s.department || '').trim().toLowerCase();
+      const sProg = (s.program || '').trim().toLowerCase();
+      // primary: student's program equals the course name (optionally ensure dept matches)
+      if (!courseName) return false;
+      if (deptName) return sProg === courseName && sDept === deptName;
+      return sProg === courseName;
+    }).length;
+  };
+
+  const countFacultyForProgram = (programName) => {
+    const p = (programName || '').trim().toLowerCase();
+    const academicPositions = new Set([
+      'Professor','Associate Professor','Assistant Professor','Instructors',
+      'Supervising Instructors','Teachers','Chairperson','Program Chair'
+    ]);
+    return faculty.filter(f => {
+      const isActive = (f.status || '').toLowerCase() === 'active';
+      const isTeachingDept = (f.department || '') === 'Academic / Teaching Positions';
+      const isTeachingRole = academicPositions.has((f.program || '').trim());
+      // assigned_program is set for teaching positions; dean_department for Deans
+      const assigned = (f.assigned_program || f.dean_department || f.program || '').trim().toLowerCase();
+      return isActive && (isTeachingDept || isTeachingRole) && assigned === p;
+    }).length;
+  };
+
   const onChange = e => {
     const { name, value } = e.target;
     setForm(f => ({ ...f, [name]: value }));
@@ -208,41 +240,57 @@ const Courses = () => {
       let response;
       if (editingCourse) {
         response = await axios.put(`/api/courses/${editingCourse.id}`, payload);
+        if (response.data.success) {
+          notifications.edit(`Course "${payload.name}" has been updated successfully!`);
+          window.dispatchEvent(new CustomEvent('courseUpdated', { 
+            detail: response.data.data || payload
+          }));
+        }
       } else {
         response = await axios.post('/api/courses', payload);
+        if (response.data.success) {
+          notifications.add(`Course "${payload.name}" has been created successfully!`);
+          window.dispatchEvent(new CustomEvent('courseAdded', { 
+            detail: response.data.data || payload
+          }));
+        }
       }
 
       if (response.data.success) {
         await loadCourses();
-        window.dispatchEvent(new Event('courseAdded'));
-        
-        const message = editingCourse ? 
-          `Course "${payload.name}" has been updated successfully!` :
-          `Course "${payload.name}" has been created successfully!`;
-          
-        alert(message);
         resetModal();
       }
-      
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Failed to save course';
-      alert(`Error: ${errorMessage}`);
+      notifications.info(`Error: ${errorMessage}`);
     } finally { 
       setSaving(false); 
     }
   };
 
-  const deleteCourse = async id => {
-    if (!confirm('Are you sure you want to delete this course? This action cannot be undone.')) return;
+  const deleteCourse = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this course?')) {
+      return;
+    }
+    
     try {
+      const courseToDelete = courses.find(c => c.id === id);
+      const courseName = courseToDelete?.name || 'Unknown course';
+      
       const response = await axios.delete(`/api/courses/${id}`);
-      if (response.data.success) {
-        await loadCourses();
-        alert('Course deleted successfully!');
+      
+      if (response.data && response.data.success) {
+        setCourses(prevCourses => prevCourses.filter(c => c.id !== id));
+        
+        notifications.delete(`Course "${courseName}" has been deleted!`);
+        
+        window.dispatchEvent(new CustomEvent('courseDeleted', { 
+          detail: courseToDelete
+        }));
       }
-    } catch (err) {
-      const errorMessage = err.response?.data?.message || 'Failed to delete course';
-      alert(`Error: ${errorMessage}`);
+    } catch (error) {
+      console.error('Error deleting course:', error);
+      notifications.info('Failed to delete course');
     }
   };
 
@@ -253,16 +301,32 @@ const Courses = () => {
   const totalPrograms = new Set(courses.filter(c => c.program).map(c => c.program)).size;
 
   const filtered = useMemo(() => {
-    return courses.filter(c => {
-      const q = search.trim().toLowerCase();
-      const matchesQ = !q ||
-        (c.name && c.name.toLowerCase().includes(q)) ||
-        (c.program && c.program.toLowerCase().includes(q)) ||
-        (c.instructor && c.instructor.toLowerCase().includes(q));
+    // First apply filters
+    let result = courses.filter(course => {
+      const matchesSearch = !search || 
+        course.name.toLowerCase().includes(search.toLowerCase()) ||
+        (course.description && course.description.toLowerCase().includes(search.toLowerCase())) ||
+        (course.program && course.program.toLowerCase().includes(search.toLowerCase())) ||
+        (course.instructor && course.instructor.toLowerCase().includes(search.toLowerCase()));
+        
+      const matchesFilter = filterStatus === 'All Courses' || 
+        course.status === filterStatus;
+        
+      return matchesSearch && matchesFilter;
+    });
+    
+    // Then sort by program (primary) and then by course name (secondary)
+    return result.sort((a, b) => {
+      // First sort by program
+      const programA = (a.program || '').toLowerCase();
+      const programB = (b.program || '').toLowerCase();
       
-      const matchesS = filterStatus === 'All Courses' || c.status === filterStatus;
+      if (programA !== programB) {
+        return programA.localeCompare(programB);
+      }
       
-      return matchesQ && matchesS;
+      // If same program, sort by course name
+      return a.name.localeCompare(b.name);
     });
   }, [courses, search, filterStatus]);
 
@@ -270,22 +334,26 @@ const Courses = () => {
     {
       label: 'Total Courses',
       value: totalCourses,
-      subText: 'All courses in system'
+      subText: 'All courses in system',
+      bg: 'bg-sky'
     },
     {
       label: 'Active Courses',
       value: activeCourses,
-      subText: 'Currently offered'
+      subText: 'Currently offered',
+      bg: 'bg-mint'
     },
     {
       label: 'Instructors',
       value: totalInstructors,
-      subText: 'Teaching faculty'
+      subText: 'Teaching faculty',
+      bg: 'bg-sun'
     },
     {
       label: 'Programs',
       value: totalPrograms,
-      subText: 'Academic programs'
+      subText: 'Academic programs',
+      bg: 'bg-sky-2'
     }
   ];
 
@@ -293,10 +361,37 @@ const Courses = () => {
     <div className="courses-root">
       {/* Banner section */}
       <div className="courses-banner">
-        <div className="courses-banner-content">
-          <div className="courses-banner-title">Course Management</div>
-          <div className="courses-banner-sub">
-            FSUU - Manage academic courses and curriculum
+        {/* NEW: image + title layout */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              background: "#22c55e",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 2px 6px #0002",
+              overflow: "hidden",
+              flexShrink: 0,
+              marginLeft: -16 // added: move the image a bit to the right
+            }}
+          >
+            <img
+              src={COURSE_BANNER_IMG}
+              alt="Course Management"
+              style={{ width: "70%", height: "70%", objectFit: "contain" }}
+              onError={(e) => {
+                e.currentTarget.parentElement.style.display = "none";
+              }}
+            />
+          </div>
+          <div className="courses-banner-content">
+            <div className="courses-banner-title">Course Management</div>
+            <div className="courses-banner-sub">
+              FSUU - Manage academic courses and curriculum
+            </div>
           </div>
         </div>
       </div>
@@ -304,7 +399,7 @@ const Courses = () => {
       {/* Stats section */}
       <div className="courses-stats-row">
         {statCards.map((stat, i) => (
-          <div key={i} className="courses-stat-card">
+          <div key={i} className={`courses-stat-card ${stat.bg}`}>
             <div className="courses-stat-value">{stat.value}</div>
             <div className="courses-stat-label">{stat.label}</div>
             <div className="courses-stat-sub">{stat.subText}</div>
@@ -330,18 +425,16 @@ const Courses = () => {
       {activeTab === 'Course List' && (
         <div className="courses-main-section">
           <div className="courses-section-header">
-            <div>
-              <h2 className="courses-section-title">Academic Courses</h2>
-              <p className="courses-section-subtitle">Manage course information and instructor assignments</p>
-            </div>
+            <h2 className="courses-section-title">Course List</h2>
             <button
+              type="button"
               className="add-course-btn"
-              onClick={() => {
-                setEditingCourse(null);
-                setForm(initialForm);
-                setShowModal(true);
-              }}
+              onClick={() => setShowModal(true)}
             >
+              {/* plus icon */}
+              <svg className="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
               Add Course
             </button>
           </div>
@@ -370,59 +463,58 @@ const Courses = () => {
           <div className="courses-ui-table-wrap">
             {fetchError && <div className="courses-ui-error">{fetchError}</div>}
             <table className="courses-ui-table">
+              {/* Set fixed column widths to mirror Departments */}
+              <colgroup>
+                <col style={{ width: '32%' }} />
+                <col style={{ width: '22%' }} />
+                <col style={{ width: '22%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '10%' }} />
+                <col style={{ width: '6%' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Course Name</th>
                   <th>Program</th>
                   <th>Instructor</th>
-                  <th>Credits</th>
-                  {/* Removed academic_year header */}
+                  <th className="center">Credits</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr>
-                    <td colSpan="6" className="loading-cell">Loading...</td>
-                  </tr>
+                  <tr><td colSpan="6" className="loading-cell">Loading...</td></tr>
                 ) : filtered.length ? (
                   filtered.map(course => (
-                    <tr key={course.id}>
+                    <tr
+                      key={course.id}
+                      className="courses-data-row"
+                      onClick={() => editCourse(course)}
+                    >
                       <td className="course-cell">
                         <div className="course-name">{course.name}</div>
                       </td>
                       <td>{course.program}</td>
-                      <td>
-                        <div className="instructor-info">
-                          <div className="instructor-name">{course.instructor || 'Not Assigned'}</div>
-                          
-                        </div>
+                      <td>{course.instructor || 'Not Assigned'}</td>
+                      <td className="center">
+                        <span className="count-number">{course.credits ?? 0}</span>
                       </td>
                       <td>
-                        <span className="credits-number">{course.credits}</span>
-                      </td>
-                      <td>
-                        <span className={`status-pill ${course.status.toLowerCase()}`}>
+                        <span className={`status-pill ${String(course.status || '').toLowerCase()}`}>
                           {course.status}
                         </span>
                       </td>
                       <td>
                         <div className="row-actions">
                           <button 
-                            className="icon-btn" 
-                            title="Edit course"
-                            onClick={() => editCourse(course)}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" fill="none">
-                              <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                              <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                            </svg>
-                          </button>
-                          <button 
                             className="icon-btn danger"
-                            onClick={() => deleteCourse(course.id)}
                             title="Delete course"
+                            type="button"
+                            onClick={(e) => { 
+                              e.stopPropagation(); 
+                              deleteCourse(course.id); 
+                            }}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" fill="none">
                               <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
@@ -433,9 +525,7 @@ const Courses = () => {
                     </tr>
                   ))
                 ) : (
-                  <tr>
-                    <td colSpan="6" className="empty-row">No courses found</td>
-                  </tr>
+                  <tr><td colSpan="6" className="empty-row">No courses found</td></tr>
                 )}
               </tbody>
             </table>
@@ -454,64 +544,115 @@ const Courses = () => {
           </div>
           
           <div className="course-cards-grid">
-            {filtered.map((course) => (
-              <div key={course.id} className="course-overview-card">
-                <div className="course-card-header">
-                  <div className="course-card-title-section">
-                    <h3 className="course-card-title">{course.name}</h3>
-                    <div className="course-card-description">{course.description}</div>
-                  </div>
-                  <span className={`course-status-badge ${course.status.toLowerCase()}`}>
-                    {course.status}
-                  </span>
-                </div>
-
-                <div className="course-details-section">
-                  <div className="course-detail-row">
-                    <span className="course-detail-label">Program:</span>
-                    <span className="course-detail-value">{course.program}</span>
-                  </div>
-                  <div className="course-detail-row">
-                    <span className="course-detail-label">Instructor:</span>
-                    <span className="course-detail-value">{course.instructor || 'Not Assigned'}</span>
-                  </div>
-                  <div className="course-detail-row">
-                    <span className="course-detail-label">Credits:</span>
-                    <span className="course-detail-value">{course.credits}</span>
-                  </div>
-                  {/* Removed Academic Year row */}
-                  {course.max_students && (
-                    <div className="course-detail-row">
-                      <span className="course-detail-label">Max Students:</span>
-                      <span className="course-detail-value">{course.max_students}</span>
+            {filtered.map((course) => {
+              const studentTotal = countStudentsForCourse(course);
+              const facultyTotal = countFacultyForProgram(course.program);
+              
+              // Get color based on program
+              let cardColor;
+              const program = (course.program || '').toLowerCase();
+              
+              if (program.includes('accountancy')) {
+                cardColor = 'skyblue';
+              } else if (program.includes('business') || program.includes('administration')) {
+                cardColor = '#e5de00';
+              } else if (program.includes('computer') || program.includes('studies')) {
+                cardColor = 'violet';
+              } else if (program.includes('engineering') || program.includes('technology')) {
+                cardColor = '#FF7900';
+              } else if (program.includes('law')) {
+                cardColor = 'gray';
+              } else if (program.includes('teacher') || program.includes('education')) {
+                cardColor = 'green';
+              } else {
+                cardColor = '#f0f0f0'; // default color for other programs
+              }
+              
+              return (
+                <div 
+                  key={course.id} 
+                  className="course-overview-card"
+                  style={{
+                    borderTop: `4px solid ${cardColor}`,
+                    boxShadow: `0 2px 10px rgba(0,0,0,0.05), 0 0 0 1px rgba(0,0,0,0.03), 0 1px 0 ${cardColor}40`
+                  }}
+                >
+                  <div className="course-card-header">
+                    <div className="course-card-title-section">
+                      <h3 className="course-card-title">{course.name}</h3>
+                      <div className="course-card-description">{course.description}</div>
                     </div>
-                  )}
-                </div>
+                    <span className={`course-status-badge ${course.status.toLowerCase()}`}>
+                      {course.status}
+                    </span>
+                  </div>
 
-                <div className="course-card-actions">
-                  <button 
-                    className="course-action-btn edit"
-                    onClick={() => editCourse(course)}
-                    title="Edit course"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
-                      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-                      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                    </svg>
-                    Edit
-                  </button>
-                  <button 
-                    className="course-action-btn delete"
-                    onClick={() => deleteCourse(course.id)}
-                    title="Delete course"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
-                      <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-                    </svg>
-                  </button>
+                  {/* Totals row */}
+                  <div className="course-stats-row">
+                    <div className="course-stat">
+                      <div className="course-stat-number students">{studentTotal}</div>
+                      <div className="course-stat-label">Students</div>
+                    </div>
+                    <div className="course-stat">
+                      <div className="course-stat-number faculty">{facultyTotal}</div>
+                      <div className="course-stat-label">Faculty</div>
+                    </div>
+                  </div>
+
+                  <div className="course-details-section">
+                    <div className="course-detail-row">
+                      <span className="course-detail-label">Program:</span>
+                      <span 
+                        className="course-detail-value"
+                        style={{ color: cardColor, fontWeight: '600' }}
+                      >
+                        {course.program}
+                      </span>
+                    </div>
+                    <div className="course-detail-row">
+                      <span className="course-detail-label">Instructor:</span>
+                      <span className="course-detail-value">{course.instructor || 'Not Assigned'}</span>
+                    </div>
+                    <div className="course-detail-row">
+                      <span className="course-detail-label">Credits:</span>
+                      <span className="course-detail-value">{course.credits}</span>
+                    </div>
+                    {/* Removed Academic Year row */}
+                    {course.max_students && (
+                      <div className="course-detail-row">
+                        <span className="course-detail-label">Max Students:</span>
+                        <span className="course-detail-value">{course.max_students}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="course-card-actions">
+                    <button 
+                      className="course-action-btn edit"
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); editCourse(course); }}
+                      title="Edit course"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                      </svg>
+                      Edit
+                    </button>
+                    <button 
+                      className="course-action-btn delete"
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); deleteCourse(course.id); }}
+                      title="Delete course"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

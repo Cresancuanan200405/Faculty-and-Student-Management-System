@@ -79,20 +79,67 @@
   transform: translateY(-2px) scale(1.04);
 }
 
+/* Fancy Add Course button (matches banner palette) */
+.add-course-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border: 0;
+  border-radius: 0.75rem;
+  color: #ffffff;
+  font-weight: 600;
+  background: linear-gradient(90deg, #10b981 0%, #3b82f6 100%);
+  box-shadow:
+    0 10px 22px rgba(59, 130, 246, 0.22),
+    0 4px 10px rgba(16, 185, 129, 0.18);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.add-course-btn .btn-icon {
+  color: #ffffff;
+}
+
+.add-course-btn:hover {
+  transform: translateY(-2px);
+  filter: brightness(1.03);
+  box-shadow:
+    0 14px 26px rgba(59, 130, 246, 0.28),
+    0 6px 14px rgba(16, 185, 129, 0.22);
+}
+
+.add-course-btn:active {
+  transform: translateY(0);
+  box-shadow:
+    0 6px 14px rgba(59, 130, 246, 0.2),
+    0 2px 8px rgba(16, 185, 129, 0.16);
+}
+
+.add-course-btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 4px rgba(59, 130, 246, 0.15),
+    0 10px 22px rgba(59, 130, 246, 0.22),
+    0 4px 10px rgba(16, 185, 129, 0.18);
+}
+
 // Stats section
 .courses-stats-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin: 18px 0 8px;
 }
 
 .courses-stat-card {
-  background: #fff;
-  padding: 1.5rem;
-  border-radius: 1.2rem;
-  box-shadow: 0 2px 8px rgba(44,62,80,0.07);
-  text-align: center;
+  flex: 1 1 260px;               /* same responsive behavior as departments */
+  border-radius: 16px;
+  padding: 22px 24px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  box-shadow: 0 8px 18px rgba(2, 8, 23, 0.06);
+  min-height: 120px;
 }
 
 .courses-stat-value {
@@ -105,14 +152,20 @@
 .courses-stat-label {
   font-size: 1rem;
   font-weight: 600;
-  color: #64748b;
+  color: #1f2937;
   margin-bottom: 0.25rem;
 }
 
 .courses-stat-sub {
   font-size: 0.875rem;
-  color: #94a3b8;
+  color: #64748b;
 }
+
+/* Color variants (already present) override background/border */
+.courses-stat-card.bg-sky   { background: #eef6ff; border-color: #dbeafe; }
+.courses-stat-card.bg-mint  { background: #effcf6; border-color: #d1fae5; }
+.courses-stat-card.bg-sun   { background: #fff6dc; border-color: #fde68a; }
+.courses-stat-card.bg-sky-2 { background: #f0f7ff; border-color: #e0ecff; }
 
 // Controls section
 .courses-controls {
@@ -239,107 +292,57 @@
 
 .courses-ui-table {
   width: 100%;
-  border-collapse: collapse;
-}
+  border-collapse: collapse;      /* important: collapse borders */
+  table-layout: fixed;            /* respect colgroup widths */
 
-.courses-ui-table th,
-.courses-ui-table td {
-  text-align: left;
-  padding: 1rem;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.courses-ui-table th {
-  background: #f8fafc;
-  font-weight: 600;
-  color: #475569;
-  font-size: 0.875rem;
-}
-
-.course-cell {
-  .course-name {
+  thead th {
+    text-align: left;
     font-weight: 600;
-    color: #1e293b;
-    margin-bottom: 0.25rem;
-  }
-  
-  .course-code {
-    font-size: 0.875rem;
+    font-size: 0.85rem;
     color: #64748b;
+    background: #f8fafc;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  tbody tr {
+    border-top: 1px solid #eef2f7;  /* one border per row for clean lines */
+  }
+
+  tbody td {
+    padding: 14px 16px;
+    vertical-align: middle;
+    border: 0;                      /* remove per-cell borders that break alignment */
+  }
+
+  td.center, th.center { text-align: center; }
+
+  /* Ensure first cell doesn't add extra borders/padding */
+  td.course-cell {
+    /* reset any custom styles that might add borders in older styles */
+    border: 0;
+    padding-left: 16px;
   }
 }
 
-.program-badge {
-  background: #e0e7ff;
-  color: #3730a3;
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  font-size: 0.875rem;
-  font-weight: 500;
+/* Keep existing pills/buttons styles from Departments for visual parity */
+.courses-ui-table .status-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  background: #ecfeff;
+  color: #059669;
+}
+.courses-ui-table .status-pill.inactive {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
-.status-pill {
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  
-  &.active {
-    background: #dcfce7;
-    color: #166534;
-  }
-  
-  &.inactive {
-    background: #fef3c7;
-    color: #92400e;
-  }
-}
-
-.row-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.icon-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 2rem;
-  height: 2rem;
-  border: none;
-  border-radius: 0.5rem;
-  background: #f1f5f9;
-  color: #64748b;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-  
-  &:hover {
-    background: #e2e8f0;
-    color: #475569;
-  }
-  
-  &.danger:hover {
-    background: #fecaca;
-    color: #dc2626;
-  }
-  
-  &.create {
-    background: #dbeafe;
-    color: #1e40af;
-    
-    &:hover {
-      background: #bfdbfe;
-      color: #1d4ed8;
-    }
-  }
-}
-
-.loading-cell,
-.empty-row {
-  text-align: center;
-  color: #64748b;
-  font-style: italic;
-}
+.loading-cell, .empty-row { text-align: center; color: #6b7280; }
 
 .courses-ui-error {
   background: #fecaca;
@@ -574,7 +577,7 @@
   }
 }
 
-// Course Overview Cards
+/* Course Overview Cards (match Departments card design) */
 .course-cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
@@ -600,11 +603,18 @@
   &::before {
     content: '';
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
+    top: 0; left: 0; right: 0;
     height: 4px;
-    background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%);
+    background: linear-gradient(90deg, #5e5ce6 0%, #1eae98 100%);
+  }
+
+  &:nth-child(3n+1) {
+    background: linear-gradient(135deg, #fef3c7 0%, #fef9e7 100%);
+    &::before { background: linear-gradient(90deg, #f59e0b 0%, #eab308 100%); }
+  }
+  &:nth-child(3n+2) {
+    background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
+    &::before { background: linear-gradient(90deg, #10b981 0%, #059669 100%); }
   }
 }
 
@@ -614,11 +624,7 @@
   align-items: flex-start;
   margin-bottom: 20px;
 }
-
-.course-card-title-section {
-  flex: 1;
-}
-
+.course-card-title-section { flex: 1; }
 .course-card-title {
   font-size: 1.25rem;
   font-weight: 600;
@@ -626,14 +632,12 @@
   margin: 0 0 4px 0;
   line-height: 1.3;
 }
-
 .course-card-code {
   font-size: 0.875rem;
   color: #6366f1;
   font-weight: 500;
   margin-bottom: 8px;
 }
-
 .course-card-description {
   font-size: 0.875rem;
   color: #64748b;
@@ -648,16 +652,9 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  
-  &.active {
-    background: #dcfce7;
-    color: #166534;
-  }
-  
-  &.inactive {
-    background: #fef2f2;
-    color: #dc2626;
-  }
+
+  &.active   { background: #dcfce7; color: #166534; }
+  &.inactive { background: #fef2f2; color: #dc2626; }
 }
 
 .course-stats-row {
@@ -669,23 +666,14 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.6);
 }
 
-.course-stat {
-  text-align: center;
-  flex: 1;
-}
+.course-stat { text-align: center; flex: 1; }
 
 .course-stat-number {
-  font-size: 2rem;
+  font-size: 1.75rem;
   font-weight: 700;
   margin-bottom: 4px;
-  
-  &.students {
-    color: #3b82f6;
-  }
-  
-  &.faculty {
-    color: #10b981;
-  }
+  &.students { color: #3b82f6; }
+  &.faculty  { color: #10b981; }
 }
 
 .course-stat-label {
@@ -694,27 +682,19 @@
   font-weight: 500;
 }
 
-.course-details-section {
-  margin: 20px 0;
-}
-
+.course-details-section { margin: 20px 0; }
 .course-detail-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
-  
-  &:last-child {
-    margin-bottom: 0;
-  }
+  &:last-child { margin-bottom: 0; }
 }
-
 .course-detail-label {
   font-size: 0.875rem;
   color: #64748b;
   font-weight: 500;
 }
-
 .course-detail-value {
   font-size: 0.875rem;
   color: #1e293b;
@@ -727,7 +707,6 @@
   gap: 8px;
   margin-top: 20px;
 }
-
 .course-action-btn {
   flex: 1;
   display: flex;
@@ -741,80 +720,23 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
-  
+
   &.edit {
-    background: #f1f5f9;
-    color: #334155;
-    
-    &:hover {
-      background: #e2e8f0;
-      color: #1e293b;
-    }
+    background: #f1f5f9; color: #334155;
+    &:hover { background: #e2e8f0; color: #1e293b; }
   }
-  
   &.delete {
-    background: #fef2f2;
-    color: #dc2626;
-    padding: 10px;
-    
-    &:hover {
-      background: #fee2e2;
-    }
+    background: #fef2f2; color: #dc2626; padding: 10px;
+    &:hover { background: #fee2e2; }
   }
 }
 
-.no-courses-message {
-  grid-column: 1 / -1;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 2px 12px rgba(44, 62, 80, 0.08);
-}
-
-// Alternative color schemes for different course types
-.course-overview-card {
-  &:nth-child(3n+1) {
-    background: linear-gradient(135deg, #fef3c7 0%, #fef9e7 100%);
-    
-    &::before {
-      background: linear-gradient(90deg, #f59e0b 0%, #eab308 100%);
-    }
-  }
-  
-  &:nth-child(3n+2) {
-    background: linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%);
-    
-    &::before {
-      background: linear-gradient(90deg, #10b981 0%, #059669 100%);
-    }
-  }
-  
-  &:nth-child(3n+3) {
-    background: linear-gradient(135deg, #fdf2f8 0%, #fef7ff 100%);
-    
-    &::before {
-      background: linear-gradient(90deg, #ec4899 0%, #d946ef 100%);
-    }
-  }
-}
-
-// Responsive adjustments
+/* Responsive match */
 @media (max-width: 768px) {
-  .course-cards-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-  
-  .course-overview-card {
-    padding: 20px;
-  }
-  
-  .course-stats-row {
-    gap: 16px;
-  }
-  
-  .course-stat-number {
-    font-size: 1.75rem;
-  }
+  .course-cards-grid { grid-template-columns: 1fr; gap: 16px; }
+  .course-overview-card { padding: 20px; }
+  .course-stats-row { gap: 16px; }
+  .course-stat-number { font-size: 1.5rem; }
 }
 
 @media (max-width: 480px) {
@@ -839,13 +761,63 @@
   }
 }
 
-.course-enrollment-badge {
-  display: inline-block;
-  background: #e0f2fe;
-  color: #0277bd;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  margin-top: 4px;
+/* Hover indicator for course table rows */
+.courses-data-row {
+  position: relative;           /* enables ::after tooltip positioning */
+  cursor: pointer;
+}
+
+.courses-data-row td {
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.courses-data-row:hover td,
+.courses-data-row:focus-within td {
+  background: #f7fbff;          /* subtle highlight */
+  box-shadow: inset 0 1px 0 rgba(2, 6, 23, 0.05), inset 0 -1px 0 rgba(2, 6, 23, 0.03);
+}
+
+/* Left gradient indicator bar */
+.courses-data-row td:first-child { position: relative; }
+.courses-data-row:hover td:first-child::before,
+.courses-data-row:focus-within td:first-child::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 4px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #10b981 0%, #3b82f6 100%);
+}
+
+/* Soft lift on hover (works on modern browsers for table rows) */
+.courses-data-row:hover {
+  filter: drop-shadow(0 6px 14px rgba(59, 130, 246, 0.12));
+}
+
+/* Optional: small tooltip text on hover using data-tip */
+.courses-data-row[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  opacity: 0;
+  font-size: 12px;
+  color: #64748b;
+  background: #ffffff;
+  padding: 3px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+.courses-data-row:hover::after { opacity: 1; transform: translateY(-50%) translateX(0); }
+
+/* Hide any placeholder action stub on the last cell */
+.courses-ui-table td:last-child::after {
+  content: none !important;
+  display: none !important;
 }

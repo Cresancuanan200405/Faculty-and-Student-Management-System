@@ -19,6 +19,8 @@ class Faculty extends Model
         'phone',
         'department',
         'program',
+        'assigned_program',
+        'dean_department',
         'academic_year',
         'status',
     ];

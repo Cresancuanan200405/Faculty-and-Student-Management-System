@@ -25,6 +25,8 @@ class FacultyController extends Controller
             'phone' => 'nullable|string',
             'department' => 'nullable|string',
             'program' => 'nullable|string',
+            'assigned_program' => 'nullable|string',
+            'dean_department' => 'nullable|string',
             'academic_year' => 'nullable|string',
             'status' => 'nullable|string',
         ];
@@ -52,6 +54,8 @@ class FacultyController extends Controller
             'phone' => 'nullable|string',
             'department' => 'nullable|string',
             'program' => 'nullable|string',
+            'assigned_program' => 'nullable|string',
+            'dean_department' => 'nullable|string',
             'academic_year' => 'nullable|string',
             'status' => 'nullable|string',
         ];
