@@ -1,24 +1,21 @@
 /* Reports page specific styles */
 
+/* Wrap each select as a uniform inline block for alignment */
 .reports-filter-type {
-	display: flex;
-	flex-direction: column;
-	gap: 6px;
+	display: inline-flex;
+	align-items: center;
 }
 
-.reports-filter-label {
-	font-size: 12px;
-	font-weight: 700;
-	color: #64748b;
-}
+/* Filter label removed per request */
+.reports-filter-label { display: none; }
 
 .reports-select {
-	min-width: 200px;
+	min-width: 220px;
 	padding: 10px 14px;
 	border-radius: 12px;
 	background: #f8fafc;
 	border: 1px solid #e5e7eb;
-	color: #2563eb;
+	color: #0f172a;
 	font-weight: 600;
 	box-shadow: 0 1px 0 #0000000a;
 	cursor: pointer;

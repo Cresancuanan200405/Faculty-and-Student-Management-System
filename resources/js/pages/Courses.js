@@ -357,6 +357,53 @@ const Courses = () => {
     }
   ];
 
+  // Program color helpers (for Program column pills)
+  const hexToRgba = (hex, alpha = 0.12) => {
+    try {
+      const h = hex.replace('#', '');
+      const v = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+      const n = parseInt(v, 16);
+      const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    } catch { return `rgba(0,0,0,${alpha})`; }
+  };
+
+  const programColors = useMemo(() => ({
+    'arts and sciences': { accent: '#10b981' }, // Light Green
+    'accountancy': { accent: '#3b82f6' }, // Light Blue
+    'business administration': { accent: '#facc15' }, // Light Yellow
+    'criminal justice education': { accent: '#ef4444' }, // Red
+    'computer studies': { accent: '#8b5cf6' }, // Violet
+    'engineering technology': { accent: '#f59e0b' }, // Orange
+    'law': { accent: '#6b7280' }, // Gray
+    'nursing': { accent: '#2563eb' }, // Blue
+    'teacher education': { accent: '#16a34a' }, // Green
+    'tourism and hospitality management': { accent: '#2563eb', gradient: 'linear-gradient(90deg, rgba(37,99,235,0.10), rgba(250,204,21,0.18))' } // Blue-Yellow
+  }), []);
+
+  const getProgramStyle = (name) => {
+    const key = String(name || '').trim().toLowerCase();
+    const conf = programColors[key] || { accent: '#6366f1' };
+    const bg = conf.gradient || hexToRgba(conf.accent, 0.14);
+    return {
+      badge: {
+        display: 'inline-block',
+        maxWidth: '100%',
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        padding: '4px 10px',
+        borderRadius: 999,
+        fontWeight: 700,
+        fontSize: 12,
+        background: bg,
+        color: conf.accent,
+        border: `1px solid ${hexToRgba(conf.accent, 0.25)}`,
+        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+      }
+    };
+  };
+
   return (
     <div className="courses-root">
       {/* Banner section */}
@@ -495,7 +542,13 @@ const Courses = () => {
                       <td className="course-cell">
                         <div className="course-name">{course.name}</div>
                       </td>
-                      <td>{course.program}</td>
+                      <td>
+                        {course.program ? (
+                          <span style={getProgramStyle(course.program).badge} title={course.program}>
+                            {course.program}
+                          </span>
+                        ) : '—'}
+                      </td>
                       <td>{course.instructor || 'Not Assigned'}</td>
                       <td className="center">
                         <span className="count-number">{course.credits ?? 0}</span>

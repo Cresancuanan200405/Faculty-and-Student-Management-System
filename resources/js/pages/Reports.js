@@ -44,19 +44,73 @@ const Reports = () => {
 
 	// UI State
 	const [activeTab, setActiveTab] = useState('Student Reports');
-	// Single merged filter selects the filter TYPE only
-	// Values: 'all' | 'course' | 'department' | 'student_id'
-	const [filterValue, setFilterValue] = useState('all');
-	// Search term for students (name or id)
+	// Department and School Year filters (students)
+	const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
+	const [selectedYear, setSelectedYear] = useState('All School Years');
+	// Faculty-specific Department and School Year filters
+	const [facultyDepartment, setFacultyDepartment] = useState('All Departments');
+	const [facultyYear, setFacultyYear] = useState('All School Years');
+	// Search term for students
 	const [searchTerm, setSearchTerm] = useState('');
+	// Search term for faculty
+	const [facultySearchTerm, setFacultySearchTerm] = useState('');
 	// Debounced term for smoother UX
 	const [debouncedTerm, setDebouncedTerm] = useState('');
+	const [facultyDebouncedTerm, setFacultyDebouncedTerm] = useState('');
+
+	// Color helpers for department-themed badges
+	const hexToRgba = useCallback((hex, alpha = 0.14) => {
+		try {
+			const h = String(hex || '').replace('#', '');
+			const v = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+			const n = parseInt(v, 16);
+			const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+			return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+		} catch { return `rgba(0,0,0,${alpha})`; }
+	}, []);
+
+	const departmentColors = useMemo(() => ({
+		'arts and sciences': { accent: '#10b981' }, // Light Green
+		'accountancy': { accent: '#3b82f6' }, // Light Blue
+		'business administration': { accent: '#facc15' }, // Light Yellow
+		'criminal justice education': { accent: '#ef4444' }, // Red
+		'computer studies': { accent: '#8b5cf6' }, // Violet
+		'engineering technology': { accent: '#f59e0b' }, // Orange
+		'law': { accent: '#6b7280' }, // Gray
+		'nursing': { accent: '#2563eb' }, // Blue
+		'teacher education': { accent: '#16a34a' }, // Green
+		'tourism and hospitality management': { accent: '#2563eb', gradient: 'linear-gradient(90deg, rgba(37,99,235,0.10), rgba(250,204,21,0.16))' } // Blue-Yellow
+	}), []);
+
+	const getDeptBadgeStyle = useCallback((deptName) => {
+		const key = String(deptName || '').trim().toLowerCase();
+		const conf = departmentColors[key];
+		if (!conf) {
+			return {
+				background: '#0ea5e9',
+				color: '#fff',
+				border: 'none'
+			};
+		}
+		const bg = conf.gradient || hexToRgba(conf.accent, 0.14);
+		return {
+			background: bg,
+			color: conf.accent,
+			border: `1px solid ${hexToRgba(conf.accent, 0.25)}`
+		};
+	}, [departmentColors, hexToRgba]);
 
 	// Debounce search input
 	useEffect(() => {
 		const t = setTimeout(() => setDebouncedTerm(searchTerm), 300);
 		return () => clearTimeout(t);
 	}, [searchTerm]);
+
+	// Debounce faculty search input
+	useEffect(() => {
+		const t = setTimeout(() => setFacultyDebouncedTerm(facultySearchTerm), 300);
+		return () => clearTimeout(t);
+	}, [facultySearchTerm]);
 
 	// Loaders
 	const loadStudents = useCallback(async () => {
@@ -113,7 +167,49 @@ const Reports = () => {
 		return () => { mounted = false; };
 	}, [loadStudents, loadDepartments, loadCourses, loadFaculty]);
 
-	// Options removed (no longer needed for simplified filter UI)
+	// Derive School Year options from loaded students
+	const schoolYearOptions = useMemo(() => {
+		const set = new Set();
+		(students || []).forEach(s => {
+			if (s?.academic_year) set.add(String(s.academic_year));
+		});
+		return Array.from(set).sort((a, b) => String(b).localeCompare(String(a)));
+	}, [students]);
+
+	// Derive School Year options from loaded faculty
+	const facultyYearOptions = useMemo(() => {
+		const set = new Set();
+		(faculty || []).forEach(f => {
+			if (f?.academic_year) set.add(String(f.academic_year));
+		});
+		return Array.from(set).sort((a, b) => String(b).localeCompare(String(a)));
+	}, [faculty]);
+
+	// Derive Department options from loaded faculty (ordered to match Faculty.js)
+	const facultyDeptOrder = useMemo(() => ([
+		"Major Leadership / Administrative Positions",
+		"Academic / Teaching Positions",
+		"Support, Non-Academic / Administrative Roles",
+		"Student Assistant Position",
+	]), []);
+
+	const facultyDepartmentOptions = useMemo(() => {
+		const uniq = new Set();
+		(faculty || []).forEach(f => {
+			if (f?.department) uniq.add(String(f.department));
+		});
+		const options = Array.from(uniq);
+		const orderIndex = new Map(facultyDeptOrder.map((n, i) => [n.toLowerCase(), i]));
+		options.sort((a, b) => {
+			const ai = orderIndex.has(a.toLowerCase()) ? orderIndex.get(a.toLowerCase()) : 999;
+			const bi = orderIndex.has(b.toLowerCase()) ? orderIndex.get(b.toLowerCase()) : 999;
+			if (ai !== bi) return ai - bi;
+			return a.localeCompare(b);
+		});
+		return options;
+	}, [faculty, facultyDeptOrder]);
+
+	// Intentionally no default selection: empty means no filter applied
 
 	// No ID dropdown options anymore; Student ID uses search term
 
@@ -128,57 +224,74 @@ const Reports = () => {
 			const emailStr = String(s?.email || '').toLowerCase();
 			const deptStr = String(s?.department || '').toLowerCase();
 			const courseStr = (s?.course_code || s?.course || s?.program || '').toLowerCase();
+			const yearStr = String(s?.academic_year || s?.year || '').toLowerCase();
 			return (
 				fullName.includes(term) ||
 				idStr.includes(term) ||
 				emailStr.includes(term) ||
 				deptStr.includes(term) ||
-				courseStr.includes(term)
+				courseStr.includes(term) ||
+				yearStr.includes(term)
 			);
 		};
 
 		return students.filter(s => {
-			if (filterValue === 'all') {
-				// Global search only
-				return matchesGlobal(s);
+			// Department filter
+			if (selectedDepartment && selectedDepartment !== 'All Departments') {
+				if (String(s?.department || '') !== String(selectedDepartment)) return false;
 			}
-
-			if (filterValue === 'course') {
-				if (!term) return true; // no filter if term empty
-				const courseStr = (s?.course_code || s?.course || s?.program || '').toLowerCase();
-				return courseStr.includes(term);
+			// School Year filter
+			if (selectedYear && selectedYear !== 'All School Years') {
+				if (String(s?.academic_year || '') !== String(selectedYear)) return false;
 			}
-
-			if (filterValue === 'department') {
-				if (!term) return true; // no filter if term empty
-				const deptStr = String(s?.department || '').toLowerCase();
-				return deptStr.includes(term);
-			}
-
-			if (filterValue === 'student_id') {
-				const maxId = Number(term);
-				if (!term || !Number.isFinite(maxId) || maxId <= 0) return true; // no filter if term empty/invalid
-				const id = Number(s?.id) || 0;
-				return id >= 1 && id <= maxId;
-			}
-
-			return true;
+			// Global search
+			return matchesGlobal(s);
 		});
-	}, [students, filterValue, debouncedTerm]);
+	}, [students, selectedDepartment, selectedYear, debouncedTerm]);
 
-	// Dynamic placeholder based on filter type
+	// Filtering for faculty (sorted by lowest ID to highest)
+	const filteredFaculty = useMemo(() => {
+		const term = facultyDebouncedTerm.trim().toLowerCase();
+
+		const matchesGlobal = (f) => {
+			if (!term) return true;
+			const fullName = [f?.first_name, f?.last_name].filter(Boolean).join(' ').toLowerCase();
+			const idStr = String(f?.id || '').toLowerCase();
+			const emailStr = String(f?.email || '').toLowerCase();
+			const deptStr = String(f?.department || '').toLowerCase();
+			const programStr = (f?.assigned_program || f?.program || '').toLowerCase();
+			const yearStr = String(f?.academic_year || '').toLowerCase();
+			return (
+				fullName.includes(term) ||
+				idStr.includes(term) ||
+				emailStr.includes(term) ||
+				deptStr.includes(term) ||
+				programStr.includes(term) ||
+				yearStr.includes(term)
+			);
+		};
+
+		const list = faculty.filter(f => {
+			// Department filter
+			if (facultyDepartment && facultyDepartment !== 'All Departments') {
+				if (String(f?.department || '') !== String(facultyDepartment)) return false;
+			}
+			// School Year filter
+			if (facultyYear && facultyYear !== 'All School Years') {
+				if (String(f?.academic_year || '') !== String(facultyYear)) return false;
+			}
+			// Global search
+			return matchesGlobal(f);
+		});
+		// Sort by ID ascending
+		list.sort((a, b) => (Number(a?.id) || 0) - (Number(b?.id) || 0));
+		return list;
+	}, [faculty, facultyDepartment, facultyYear, facultyDebouncedTerm]);
+
+	// Static placeholder
 	const searchPlaceholder = useMemo(() => {
-		switch (filterValue) {
-			case 'course':
-				return 'Filter by course or program…';
-			case 'department':
-				return 'Filter by department…';
-			case 'student_id':
-				return 'Show students with ID up to… (e.g., 50)';
-			default:
-				return 'Search by name, email, ID, department, or course…';
-		}
-	}, [filterValue]);
+		return 'Search by name, email, ID, department, course, or school year…';
+	}, []);
 
 	// Stats
 	const totalStudents = students.length;
@@ -200,13 +313,14 @@ const Reports = () => {
 	// Export CSV of filtered
 	const exportCSV = () => {
 		if (!filteredStudents.length) return;
-		const headers = ['Student ID', 'Name', 'Course', 'Department', 'Status'];
+		const headers = ['Student ID', 'Name', 'Course', 'Department', 'School Year', 'Status'];
 		const rows = filteredStudents.map(s => {
 			const name = [s?.first_name, s?.last_name].filter(Boolean).join(' ');
 			const course = s?.course_code || s?.course || s?.program || '';
 			const dept = s?.department || '';
+			const sy = s?.academic_year || s?.year || '';
 			const status = s?.status || '';
-			return [s?.id, name, course, dept, status];
+			return [s?.id, name, course, dept, sy, status];
 		});
 		const csv = [headers, ...rows]
 			.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
@@ -222,23 +336,53 @@ const Reports = () => {
 		URL.revokeObjectURL(url);
 	};
 
+	// Export CSV of filtered faculty
+	const exportFacultyCSV = () => {
+		if (!filteredFaculty.length) return;
+		const headers = ['Faculty ID', 'Name', 'Program', 'Department', 'School Year', 'Status'];
+		const rows = filteredFaculty.map(f => {
+			const name = [f?.first_name, f?.last_name].filter(Boolean).join(' ');
+			const program = f?.assigned_program || f?.program || '';
+			const dept = f?.department || '';
+			const sy = f?.academic_year || '';
+			const status = f?.status || '';
+			return [f?.id, name, program, dept, sy, status];
+		});
+		const csv = [headers, ...rows]
+			.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+			.join('\n');
+		const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `faculty_reports_${Date.now()}.csv`;
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		URL.revokeObjectURL(url);
+	};
+
 	// Helpers for UI pills/badges
-	const renderCourseBadge = (text) => (
-		<span
-			style={{
-				display: 'inline-block',
-				padding: '4px 10px',
-				borderRadius: 999,
-				background: '#0ea5e9',
-				color: '#fff',
-				fontSize: 12,
-				fontWeight: 700,
-				boxShadow: '0 1px 3px #0002'
-			}}
-		>
-			{text}
-		</span>
-	);
+	const renderCourseBadge = (text, dept) => {
+		if (!text) return <span>—</span>;
+		const themed = getDeptBadgeStyle(dept);
+		return (
+			<span
+				style={{
+					display: 'inline-block',
+					padding: '4px 10px',
+					borderRadius: 999,
+					fontSize: 12,
+					fontWeight: 700,
+					boxShadow: '0 1px 3px #0002',
+					...themed,
+				}}
+				title={String(text)}
+			>
+				{text}
+			</span>
+		);
+	};
 
 	const renderStatusPill = (status) => {
 		const s = String(status || '').toLowerCase();
@@ -273,11 +417,11 @@ const Reports = () => {
 							marginLeft: -16,
 						}}
 					>
-						{/* simple doc icon */}
-						<svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
-							<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" opacity=".6"/>
-							<path d="M14 2v6h6"/>
-						</svg>
+						<img
+							src="/images/Report_Manager.png"
+							alt="Reports icon"
+							style={{ width: '60%', height: '60%', objectFit: 'cover' }}
+						/>
 					</div>
 					<div className="departments-banner-content">
 						<div className="departments-banner-title">Reports & Analytics</div>
@@ -341,25 +485,41 @@ const Reports = () => {
 						</button>
 					</div>
 
-					{/* Filters row (merged) */}
+					{/* Filters row */}
 					<div className="departments-ui-filters" style={{ gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-						{/* Single dropdown for filter TYPE only */}
+						{/* Department select (replaces previous filter-type) */}
 						<div className="reports-filter-type">
-							<label className="reports-filter-label" htmlFor="reports-filter-select">Filter</label>
 							<select
-								id="reports-filter-select"
+								id="reports-department-select"
 								className="reports-select"
-								value={filterValue}
-								onChange={e => setFilterValue(e.target.value)}
+								value={selectedDepartment}
+								onChange={e => setSelectedDepartment(e.target.value)}
+								aria-label="Department"
 							>
-							<option value="all">All Students</option>
-							<option value="course">Course</option>
-							<option value="department">Department</option>
-							<option value="student_id">Student ID</option>
+								<option value="All Departments">All Departments</option>
+								{(departments || []).map((d) => (
+									<option key={d.id ?? d.name} value={d.name}>{d.name}</option>
+								))}
 							</select>
 						</div>
 
-						{/* Search students by name or ID */}
+						{/* School Year select */}
+						<div className="reports-filter-type">
+							<select
+								id="reports-year-select"
+								className="reports-select"
+								value={selectedYear}
+								onChange={e => setSelectedYear(e.target.value)}
+								aria-label="School Year"
+							>
+								<option value="All School Years">All School Years</option>
+								{schoolYearOptions.map((y) => (
+									<option key={y} value={y}>{y}</option>
+								))}
+							</select>
+						</div>
+
+						{/* Search students */}
 						<div className="reports-search">
 							<span className="reports-search-icon" aria-hidden>
 								<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
@@ -371,17 +531,8 @@ const Reports = () => {
 								className="reports-search-input"
 								placeholder={searchPlaceholder}
 								value={searchTerm}
-								onChange={e => {
-									if (filterValue === 'student_id') {
-										const v = e.target.value.replace(/[^\d]/g, '');
-										setSearchTerm(v);
-									} else {
-										setSearchTerm(e.target.value);
-									}
-								}}
-								type={filterValue === 'student_id' ? 'number' : 'text'}
-								inputMode={filterValue === 'student_id' ? 'numeric' : undefined}
-								min={filterValue === 'student_id' ? 1 : undefined}
+								onChange={e => setSearchTerm(e.target.value)}
+								type="text"
 							/>
 							{searchTerm && (
 								<button
@@ -396,7 +547,8 @@ const Reports = () => {
 						</div>
 
 						<div className="reports-count">
-							<span className="reports-filter-mode">{filterValue === 'all' ? 'All Students' : filterValue === 'course' ? 'Course' : filterValue === 'department' ? 'Department' : 'Student ID'}</span>
+							<span className="reports-filter-mode">{selectedDepartment}</span>
+							<span className="reports-filter-mode">{selectedYear}</span>
 							<span className="reports-count-text">{filteredStudents.length} students found</span>
 						</div>
 					</div>
@@ -411,12 +563,13 @@ const Reports = () => {
 									<th>Name</th>
 									<th>Course</th>
 									<th>Department</th>
+									<th>School Year</th>
 									<th>Status</th>
 								</tr>
 							</thead>
 							<tbody>
 								{loading ? (
-									<tr><td colSpan="5" className="loading-cell">Loading...</td></tr>
+									<tr><td colSpan="6" className="loading-cell">Loading...</td></tr>
 								) : filteredStudents.length ? (
 									filteredStudents.map((stu) => {
 										const name = [stu?.first_name, stu?.last_name].filter(Boolean).join(' ');
@@ -425,16 +578,17 @@ const Reports = () => {
 											<tr key={stu.id}>
 												<td><strong>{stu.id}</strong></td>
 												<td>{name || '—'}</td>
-												<td>{renderCourseBadge(course || '—')}</td>
+												<td>{renderCourseBadge(course || '—', stu?.department)}</td>
 												<td>
 													<span style={{ color: '#2563eb', fontWeight: 600 }}>{stu?.department || '—'}</span>
 												</td>
+												<td>{stu?.academic_year || '—'}</td>
 												<td>{renderStatusPill(stu?.status)}</td>
 											</tr>
 										);
 									})
 								) : (
-									<tr><td colSpan="5" className="empty-row">No students match your filters</td></tr>
+									<tr><td colSpan="6" className="empty-row">No students match your filters</td></tr>
 								)}
 							</tbody>
 						</table>
@@ -447,13 +601,120 @@ const Reports = () => {
 					<div className="departments-section-header">
 						<div>
 							<h2 className="departments-section-title">Faculty Reports</h2>
-							<p className="departments-section-subtitle">Generate faculty-related reports (coming soon)</p>
+							<p className="departments-section-subtitle">Generate detailed reports for faculty with flexible filters</p>
+						</div>
+						<button className="add-department-btn" onClick={exportFacultyCSV} title="Export CSV">
+							Export Report
+						</button>
+					</div>
+
+					{/* Filters row */}
+					<div className="departments-ui-filters" style={{ gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+						{/* Department select (from faculty) */}
+						<div className="reports-filter-type">
+							<select
+								id="faculty-department-select"
+								className="reports-select"
+								value={facultyDepartment}
+								onChange={e => setFacultyDepartment(e.target.value)}
+								aria-label="Department"
+							>
+								<option value="All Departments">All Departments</option>
+								{facultyDepartmentOptions.map((name) => (
+									<option key={name} value={name}>{name}</option>
+								))}
+							</select>
+						</div>
+
+						{/* School Year select */}
+						<div className="reports-filter-type">
+							<select
+								id="faculty-year-select"
+								className="reports-select"
+								value={facultyYear}
+								onChange={e => setFacultyYear(e.target.value)}
+								aria-label="School Year"
+							>
+								<option value="All School Years">All School Years</option>
+								{facultyYearOptions.map((y) => (
+									<option key={y} value={y}>{y}</option>
+								))}
+							</select>
+						</div>
+
+						{/* Search faculty */}
+						<div className="reports-search">
+							<span className="reports-search-icon" aria-hidden>
+								<svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+									<circle cx="11" cy="11" r="8"/>
+									<path d="M21 21l-4.35-4.35"/>
+								</svg>
+							</span>
+							<input
+								className="reports-search-input"
+								placeholder={'Search by name, email, ID, department, program, or school year…'}
+								value={facultySearchTerm}
+								onChange={e => setFacultySearchTerm(e.target.value)}
+								type="text"
+							/>
+							{facultySearchTerm && (
+								<button
+									type="button"
+									className="reports-clear"
+									onClick={() => setFacultySearchTerm('')}
+									aria-label="Clear search"
+								>
+									×
+								</button>
+							)}
+						</div>
+
+						<div className="reports-count">
+							<span className="reports-filter-mode">{facultyDepartment}</span>
+							<span className="reports-filter-mode">{facultyYear}</span>
+							<span className="reports-count-text">{filteredFaculty.length} faculty found</span>
 						</div>
 					</div>
-					<div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 2px 8px #0001', padding: 24 }}>
-						<p style={{ color: '#64748b' }}>
-							Use the Student Reports tab for now. We can extend this section with similar filters for faculty once endpoints are confirmed.
-						</p>
+
+					{/* Table */}
+					<div className="departments-ui-table-wrap">
+						{error && <div className="departments-ui-error">{error}</div>}
+						<table className="departments-ui-table">
+							<thead>
+								<tr>
+									<th>Faculty ID</th>
+									<th>Name</th>
+									<th>Program</th>
+									<th>Department</th>
+									<th>School Year</th>
+									<th>Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								{loading ? (
+									<tr><td colSpan="6" className="loading-cell">Loading...</td></tr>
+								) : filteredFaculty.length ? (
+									filteredFaculty.map((f) => {
+										const name = [f?.first_name, f?.last_name].filter(Boolean).join(' ');
+										const program = f?.assigned_program || f?.program || '';
+										return (
+											<tr key={f.id}>
+												<td><strong>{f.id}</strong></td>
+												<td>{name || '—'}</td>
+												<td>{renderCourseBadge(program || '—', f?.department)}</td>
+												<td>
+													<span style={{ color: '#2563eb', fontWeight: 600 }}>{f?.department || '—'}</span>
+												</td>
+												<td>{f?.academic_year || '—'}</td>
+												<td>{renderStatusPill(f?.status)}</td>
+											</tr>
+										);
+									})
+								) : (
+									<tr><td colSpan="6" className="empty-row">No faculty match your filters</td></tr>
+								)}
+							</tbody>
+						</table>
 					</div>
 				</div>
 			)}

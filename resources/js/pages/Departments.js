@@ -243,6 +243,49 @@ const Departments = () => {
     }
   ];
 
+  // Helpers for Program Overview colors per department
+  const hexToRgba = (hex, alpha = 0.1) => {
+    try {
+      const h = hex.replace('#', '');
+      const bigint = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+      const r = (bigint >> 16) & 255;
+      const g = (bigint >> 8) & 255;
+      const b = bigint & 255;
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    } catch {
+      return `rgba(0,0,0,${alpha})`;
+    }
+  };
+
+  const programColors = useMemo(() => ({
+    'Arts and Sciences': { accent: '#10b981', tint: hexToRgba('#10b981', 0.10) }, // Light Green
+    'Accountancy': { accent: '#3b82f6', tint: hexToRgba('#3b82f6', 0.10) }, // Light Blue
+    'Business Administration': { accent: '#facc15', tint: hexToRgba('#facc15', 0.14) }, // Light Yellow
+    'Criminal Justice Education': { accent: '#ef4444', tint: hexToRgba('#ef4444', 0.10) }, // Red
+    'Computer Studies': { accent: '#8b5cf6', tint: hexToRgba('#8b5cf6', 0.10) }, // Violet
+    'Engineering Technology': { accent: '#f59e0b', tint: hexToRgba('#f59e0b', 0.12) }, // Orange
+    'Law': { accent: '#6b7280', tint: hexToRgba('#6b7280', 0.10) }, // Gray
+    'Nursing': { accent: '#2563eb', tint: hexToRgba('#2563eb', 0.10) }, // Blue
+    'Teacher Education': { accent: '#16a34a', tint: hexToRgba('#16a34a', 0.10) }, // Green
+    'Tourism and Hospitality Management': { accent: '#2563eb', tint: hexToRgba('#facc15', 0.08), gradient: 'linear-gradient(90deg, rgba(37,99,235,0.10), rgba(250,204,21,0.14))' } // Blue-Yellow
+  }), []);
+
+  const getProgramStyles = (name) => {
+    const c = programColors[name] || { accent: '#6366f1', tint: hexToRgba('#6366f1', 0.08) };
+    const cardStyle = {
+      borderLeft: `6px solid ${c.accent}`,
+      background: c.gradient ? c.gradient : `linear-gradient(0deg, ${c.tint}, ${c.tint}), #fff`,
+      boxShadow: '0 2px 8px #0001'
+    };
+    const titleStyle = { color: c.accent };
+    const countStyle = {
+      color: c.accent,
+      background: hexToRgba(c.accent, 0.12),
+      border: `1px solid ${hexToRgba(c.accent, 0.20)}`
+    };
+    return { cardStyle, titleStyle, countStyle };
+  };
+
   return (
     <div className="departments-root">
       {/* Banner section */}
@@ -436,11 +479,12 @@ const Departments = () => {
                     course.program &&
                     course.program.trim().toLowerCase() === dept.name.trim().toLowerCase()
                 );
+                const styles = getProgramStyles(dept.name);
                 return (
-                  <div key={dept.id} className="department-overview-card">
+                  <div key={dept.id} className="department-overview-card" style={styles.cardStyle}>
                     <div className="department-card-header">
                       <div className="department-card-title-section">
-                        <h3 className="department-card-title">{dept.name}</h3>
+                        <h3 className="department-card-title" style={styles.titleStyle}>{dept.name}</h3>
                         <div className="department-card-description">{dept.description}</div>
                       </div>
                       <span className={`department-status-badge ${dept.status.toLowerCase()}`}>
@@ -450,7 +494,7 @@ const Departments = () => {
 
                     {/* Display courses for this department/program */}
                     <div className="department-courses-list" style={{ marginTop: 16 }}>
-                      <h4 style={{ marginBottom: 8 }}>Courses</h4>
+                      <h4 style={{ marginBottom: 8, ...styles.titleStyle }}>Courses</h4>
                       {deptCourses.length > 0 ? (
                         <ul className="courses-list" style={{ paddingLeft: 20 }}>
                           {deptCourses.map(course => (
