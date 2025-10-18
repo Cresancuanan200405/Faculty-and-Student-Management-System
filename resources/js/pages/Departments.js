@@ -220,22 +220,26 @@ const Departments = () => {
     {
       label: 'Total Programs',
       value: totalPrograms,
-      subText: 'Active academic programs'
+      subText: 'Active academic programs',
+      bg: 'bg-sky'
     },
     {
       label: 'Total Students',
       value: totalStudents,
-      subText: 'Across all programs'
+      subText: 'Across all programs',
+      bg: 'bg-mint'
     },
     {
       label: 'Total Faculty',
       value: totalFaculty,
-      subText: 'Teaching staff'
+      subText: 'Teaching staff',
+      bg: 'bg-sun'
     },
     {
       label: 'Total Budget',
       value: `$${(totalBudget / 1000000).toFixed(1)}M`,
-      subText: 'Annual allocation'
+      subText: 'Annual allocation',
+      bg: 'bg-sky-2'
     }
   ];
 
@@ -280,7 +284,7 @@ const Departments = () => {
       {/* Stats section */}
       <div className="departments-stats-row">
         {statCards.map((stat, i) => (
-          <div key={i} className="departments-stat-card">
+          <div key={i} className={`departments-stat-card ${stat.bg}`}>
             <div className="departments-stat-value">{stat.value}</div>
             <div className="departments-stat-label">{stat.label}</div>
             <div className="departments-stat-sub">{stat.subText}</div>

@@ -1,5 +1,8 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import axios from "axios";
+import ConfirmModal from "./ConfirmModal";
+import notifications from "../utils/notifications";
 import "../../sass/Sidebar.scss";
 
 const menu = [
@@ -28,6 +31,37 @@ const menu = [
 
 const Sidebar = ({ onLogout }) => {
   const location = useLocation();
+  const [user, setUser] = useState(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        if (token) {
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          const { data } = await axios.get('/api/me');
+          setUser(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch user data:', error);
+      }
+    };
+
+    fetchUser();
+  }, []);
+  const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutConfirm(false);
+    notifications.info('Logged out successfully', 3000);
+    onLogout && onLogout();
+  };
+
+  const cancelLogout = () => setShowLogoutConfirm(false);
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo-area">
@@ -40,8 +74,7 @@ const Sidebar = ({ onLogout }) => {
         </div>
       </div>
 
-      {/* subtle divider to separate logo from navigation */}
-      <div className="sidebar-divider" />
+
 
       <ul className="sidebar-menu">
         {menu.map(item => (
@@ -60,16 +93,35 @@ const Sidebar = ({ onLogout }) => {
       <div className="sidebar-user-area">
         <Link to="/profile" className="sidebar-user-link" title="View profile">
           <div className="sidebar-user-avatar">
-            <img src="/avatar-bronny.png" alt="Bronny James" />
+            {user?.profile_image_url ? (
+              <img 
+                src={user.profile_image_url} 
+                alt={user.name || "User"} 
+                onError={(e) => {
+                  e.target.src = "/avatar-bronny.png";
+                }}
+              />
+            ) : (
+              <img src="/avatar-bronny.png" alt={user?.name || "User"} />
+            )}
           </div>
           <div className="sidebar-user-info">
-            <div className="sidebar-user-name">Bronny James</div>
-            <div className="sidebar-user-role">System Administrator</div>
+            <div className="sidebar-user-name">{user?.name || "Loading..."}</div>
+            <div className="sidebar-user-role">{user?.position || "User"}</div>
           </div>
         </Link>
-        <button className="sidebar-logout-btn" onClick={onLogout} title="Logout">
+        <button className="sidebar-logout-btn" onClick={handleLogout} title="Logout">
           <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M16 13v-2H7V8l-5 4 5 4v-3h9zm3-10H5c-1.1 0-2 .9-2 2v6h2V5h14v14H5v-6H3v6c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" fill="currentColor"/></svg>
         </button>
+        <ConfirmModal
+          open={showLogoutConfirm}
+          title="Log out?"
+          message="You will be signed out of your session."
+          cancelText="Cancel"
+          confirmText="Log out"
+          onCancel={cancelLogout}
+          onConfirm={confirmLogout}
+        />
       </div>
     </aside>
   );

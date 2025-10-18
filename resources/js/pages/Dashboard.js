@@ -12,6 +12,7 @@ const Dashboard = () => {
   const [students, setStudents] = useState([]);
   const [faculty, setFaculty] = useState([]);
   const [courses, setCourses] = useState([]);
+  const [user, setUser] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -45,6 +46,25 @@ const Dashboard = () => {
     const firstArray = Object.values(d || {}).find(Array.isArray);
     return Array.isArray(firstArray) ? firstArray : [];
   };
+
+  // Fetch user data
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+        if (token) {
+          const axios = window.axios || axiosLib;
+          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+          const { data } = await axios.get('/api/me');
+          setUser(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch user data:', error);
+      }
+    };
+
+    fetchUser();
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -115,6 +135,24 @@ const Dashboard = () => {
     return { counts, avg, total };
   }, [departments, faculty, loading]);
 
+  // Helper function to get department color
+  const getDepartmentColor = (departmentName) => {
+    const name = norm(departmentName);
+    const colorMap = {
+      'arts and sciences': 'linear-gradient(90deg, #86efac, #4ade80)', // Light Green
+      'accountancy': 'linear-gradient(90deg, #7dd3fc, #38bdf8)', // Light Blue
+      'business administration': 'linear-gradient(90deg, #fef08a, #facc15)', // Light Yellow
+      'criminal justice education': 'linear-gradient(90deg, #fca5a5, #ef4444)', // Red
+      'computer studies': 'linear-gradient(90deg, #c4b5fd, #8b5cf6)', // Violet
+      'engineering technology': 'linear-gradient(90deg, #fdba74, #f97316)', // Orange
+      'law': 'linear-gradient(90deg, #d1d5db, #6b7280)', // Gray
+      'nursing': 'linear-gradient(90deg, #93c5fd, #3b82f6)', // Blue
+      'teacher education': 'linear-gradient(90deg, #bbf7d0, #22c55e)', // Green
+      'tourism and hospitality management': 'linear-gradient(90deg, #3b82f6, #facc15)' // Blue to Yellow
+    };
+    return colorMap[name] || 'linear-gradient(90deg, #6b7280, #4b5563)'; // Default gray
+  };
+
   // Program overview with percent bars - removed faculty references
   const programOverview = useMemo(() => {
     const rows = departments.map((d, i) => {
@@ -135,11 +173,10 @@ const Dashboard = () => {
       };
     });
     const maxStudents = rows.reduce((m, r) => Math.max(m, r.students), 0);
-    const colors = ['#4f46e5', '#14b8a6', '#f59e0b', '#ef4444', '#22c55e', '#8b5cf6'];
     return rows.map((r, i) => ({
       ...r,
       percent: maxStudents ? Math.round((r.students / maxStudents) * 100) : 0,
-      color: colors[i % colors.length]
+      color: getDepartmentColor(r.name)
     }));
   }, [departments, students, courses]); // Removed faculty dependency
 
@@ -177,14 +214,6 @@ const Dashboard = () => {
     });
 
     const total = faculty.length || 1;
-    const gradients = [
-      'linear-gradient(90deg,#6d28d9,#4f46e5)',
-      'linear-gradient(90deg,#1d4ed8,#0ea5e9)',
-      'linear-gradient(90deg,#f59e0b,#ef4444)',
-      'linear-gradient(90deg,#14b8a6,#22c55e)',
-      'linear-gradient(90deg,#8b5cf6,#06b6d4)',
-      'linear-gradient(90deg,#22c55e,#4f46e5)',
-    ];
 
     return rows
       .map((r, i) => {
@@ -194,7 +223,7 @@ const Dashboard = () => {
           percent,
           // width now matches percent of total faculty
           width: percent,
-          color: gradients[i % gradients.length],
+          color: getDepartmentColor(r.name),
         };
       })
       .sort((a, b) => b.count - a.count);
@@ -661,7 +690,9 @@ const Dashboard = () => {
               />
             </div>
             <div style={{ minWidth: 200 }}>
-              <div className="dashboard-banner-title">Welcome Back, Bronny</div>
+              <div className="dashboard-banner-title">
+                Welcome Back, {user?.name || 'User'}
+              </div>
               <div className="dashboard-banner-sub">
                 Father Saturnino Urios University - Faculty and Student Profile Management System Dashboard
               </div>
@@ -734,15 +765,6 @@ const Dashboard = () => {
           </div>
 
           {(loading ? [] : programOverview).map((prog, i) => {
-            const gradients = [
-              'linear-gradient(90deg,#6d28d9,#4f46e5)',
-              'linear-gradient(90deg,#1d4ed8,#0ea5e9)',
-              'linear-gradient(90deg,#f59e0b,#ef4444)',
-              'linear-gradient(90deg,#14b8a6,#22c55e)',
-              'linear-gradient(90deg,#8b5cf6,#06b6d4)',
-              'linear-gradient(90deg,#22c55e,#4f46e5)',
-            ];
-            const fill = gradients[i % gradients.length];
             return (
               <div className="prog-card" key={prog.id}>
                 <div className="prog-card-head">
@@ -755,7 +777,7 @@ const Dashboard = () => {
                 <div className="prog-track">
                   <div
                     className="prog-fill"
-                    style={{ width: `${prog.percent}%`, background: fill }}
+                    style={{ width: `${prog.percent}%`, background: prog.color }}
                   />
                 </div>
               </div>
@@ -772,16 +794,6 @@ const Dashboard = () => {
           </div>
 
           {(loading ? [] : facultyDistribution).map((row, i) => {
-            const gradients = [
-              'linear-gradient(90deg,#6d28d9,#4f46e5)',
-              'linear-gradient(90deg,#1d4ed8,#0ea5e9)',
-              'linear-gradient(90deg,#f59e0b,#ef4444)',
-              'linear-gradient(90deg,#14b8a6,#22c55e)',
-              'linear-gradient(90deg,#8b5cf6,#06b6d4)',
-              'linear-gradient(90deg,#22c55e,#4f46e5)',
-            ];
-            const fill = gradients[i % gradients.length];
-
             return (
               <div className="prog-card" key={row.id || row.name || i}>
                 <div className="prog-card-head">
@@ -792,7 +804,7 @@ const Dashboard = () => {
                 <div className="prog-track">
                   <div
                     className="prog-fill"
-                    style={{ width: `${row.width}%`, background: fill }}
+                    style={{ width: `${row.width}%`, background: row.color }}
                   />
                 </div>
               </div>

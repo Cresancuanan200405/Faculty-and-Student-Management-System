@@ -124,7 +124,7 @@
     0 4px 10px rgba(16, 185, 129, 0.18);
 }
 
-// Stats section
+// Stats section - Enhanced with mixed gradients and effects
 .courses-stats-row {
   display: flex;
   flex-wrap: wrap;
@@ -133,39 +133,110 @@
 }
 
 .courses-stat-card {
-  flex: 1 1 260px;               /* same responsive behavior as departments */
-  border-radius: 16px;
-  padding: 22px 24px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
-  box-shadow: 0 8px 18px rgba(2, 8, 23, 0.06);
-  min-height: 120px;
+  flex: 1 1 260px;
+  border-radius: 20px;
+  padding: 28px 32px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 
+    0 20px 40px rgba(102, 126, 234, 0.15),
+    0 15px 25px rgba(118, 75, 162, 0.1),
+    0 5px 10px rgba(240, 147, 251, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+  min-height: 140px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+    border-radius: inherit;
+    pointer-events: none;
+  }
+
+  &:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 
+      0 32px 60px rgba(102, 126, 234, 0.25),
+      0 20px 40px rgba(118, 75, 162, 0.15),
+      0 8px 16px rgba(240, 147, 251, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.15);
+  }
 }
 
 .courses-stat-value {
-  font-size: 2rem;
-  font-weight: 700;
-  color: #1e293b;
-  margin-bottom: 0.5rem;
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: #ffffff;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  margin-bottom: 8px;
+  position: relative;
+  z-index: 2;
 }
 
 .courses-stat-label {
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 0.25rem;
+  color: #ffffff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  margin-bottom: 4px;
+  position: relative;
+  z-index: 2;
 }
 
 .courses-stat-sub {
-  font-size: 0.875rem;
-  color: #64748b;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  position: relative;
+  z-index: 2;
 }
 
-/* Color variants (already present) override background/border */
-.courses-stat-card.bg-sky   { background: #eef6ff; border-color: #dbeafe; }
-.courses-stat-card.bg-mint  { background: #effcf6; border-color: #d1fae5; }
-.courses-stat-card.bg-sun   { background: #fff6dc; border-color: #fde68a; }
-.courses-stat-card.bg-sky-2 { background: #f0f7ff; border-color: #e0ecff; }
+/* Enhanced color variants with mixed gradients */
+.courses-stat-card.bg-sky { 
+  background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 50%, #6366f1 100%);
+  box-shadow: 
+    0 20px 40px rgba(14, 165, 233, 0.15),
+    0 15px 25px rgba(59, 130, 246, 0.1),
+    0 5px 10px rgba(99, 102, 241, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.courses-stat-card.bg-mint { 
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%);
+  box-shadow: 
+    0 20px 40px rgba(16, 185, 129, 0.15),
+    0 15px 25px rgba(5, 150, 105, 0.1),
+    0 5px 10px rgba(4, 120, 87, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.courses-stat-card.bg-sun { 
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 50%, #b45309 100%);
+  box-shadow: 
+    0 20px 40px rgba(245, 158, 11, 0.15),
+    0 15px 25px rgba(217, 119, 6, 0.1),
+    0 5px 10px rgba(180, 83, 9, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.courses-stat-card.bg-sky-2 { 
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%);
+  box-shadow: 
+    0 20px 40px rgba(139, 92, 246, 0.15),
+    0 15px 25px rgba(124, 58, 237, 0.1),
+    0 5px 10px rgba(109, 40, 217, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
 
 // Controls section
 .courses-controls {
@@ -174,35 +245,47 @@
 
 .courses-tabs {
   display: flex;
-  gap: 0;
-  background: #f1f5f9;
-  border-radius: 25px;
-  padding: 4px;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  border-radius: 30px;
+  padding: 8px;
   width: fit-content;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .courses-tab {
   background: transparent;
   border: none;
-  border-radius: 20px;
-  padding: 8px 20px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #64748b;
+  border-radius: 24px;
+  padding: 12px 28px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a202c;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
+  position: relative;
+  overflow: hidden;
 }
 
 .courses-tab.active {
-  background: linear-gradient(90deg, #1eae98 0%, #4e2db3 100%);
-  color: #fff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4), 
+              0 2px 8px rgba(118, 75, 162, 0.3),
+              inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
 }
 
 .courses-tab:hover:not(.active) {
-  background: #e2e8f0;
-  color: #475569;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  color: #1a202c;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
 // Main section
@@ -627,20 +710,24 @@
 .course-card-title-section { flex: 1; }
 .course-card-title {
   font-size: 1.25rem;
-  font-weight: 600;
-  color: #1e293b;
+  font-weight: 700;
+  color: #1a202c;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
   margin: 0 0 4px 0;
   line-height: 1.3;
 }
 .course-card-code {
   font-size: 0.875rem;
   color: #6366f1;
-  font-weight: 500;
+  font-weight: 600;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.7);
   margin-bottom: 8px;
 }
 .course-card-description {
   font-size: 0.875rem;
-  color: #64748b;
+  color: #1a202c;
+  font-weight: 500;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.7);
   line-height: 1.4;
   margin: 0;
 }
@@ -692,13 +779,15 @@
 }
 .course-detail-label {
   font-size: 0.875rem;
-  color: #64748b;
-  font-weight: 500;
+  color: #1a202c;
+  font-weight: 600;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.7);
 }
 .course-detail-value {
   font-size: 0.875rem;
-  color: #1e293b;
-  font-weight: 500;
+  color: #1a202c;
+  font-weight: 700;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.7);
   text-align: right;
 }
 

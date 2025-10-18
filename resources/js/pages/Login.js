@@ -1,11 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import notifications from '../utils/notifications';
 
 function Login({ onLogin }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: '', password: '' });
   const [remember, setRemember] = useState(false);
+
+  useEffect(() => {
+    // ensure axios carries token if present
+    const token = localStorage.getItem('token');
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+  }, []);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -14,9 +23,23 @@ function Login({ onLogin }) {
   const handleLogin = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/api/login', form);
-      if (onLogin) onLogin();
-      navigate("/dashboard");
+      const { data } = await axios.post('/api/login', form);
+      if (data.token) {
+        if (remember) {
+          localStorage.setItem('token', data.token);
+        } else {
+          sessionStorage.setItem('token', data.token);
+        }
+        axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`;
+      }
+      const user = data.user;
+      if (onLogin) onLogin(user);
+      notifications.add('Logged in successfully', 3000);
+      if (user?.position === 'System Administrator' && !user?.profile_completed) {
+        navigate('/profile');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err) {
       alert("Login failed: " + (err.response?.data?.message || err.message));
     }
@@ -34,17 +57,17 @@ function Login({ onLogin }) {
       </div>
       <div className="auth-right">
         <div className="auth-card">
-          <h3 className="auth-login-title">ADMIN LOGIN</h3>
+          <h3 className="auth-login-title">USER LOGIN</h3>
           <form onSubmit={handleLogin} className="auth-form">
             <div className="auth-input-group">
               <span className="auth-icon">
                 <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M14 14s-1-1.5-6-1.5S2 14 2 14V13a6 6 0 1 1 12 0v1z"/></svg>
               </span>
               <input
-                type="email"
+                type="text"
                 className="auth-input"
                 name="email"
-                placeholder="Username"
+                placeholder="Email or Username"
                 value={form.email}
                 onChange={handleChange}
                 required

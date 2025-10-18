@@ -1,0 +1,86 @@
+/* Reports page specific styles */
+
+.reports-filter-type {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.reports-filter-label {
+	font-size: 12px;
+	font-weight: 700;
+	color: #64748b;
+}
+
+.reports-select {
+	min-width: 200px;
+	padding: 10px 14px;
+	border-radius: 12px;
+	background: #f8fafc;
+	border: 1px solid #e5e7eb;
+	color: #2563eb;
+	font-weight: 600;
+	box-shadow: 0 1px 0 #0000000a;
+	cursor: pointer;
+}
+
+.reports-search {
+	position: relative;
+	min-width: 320px;
+	max-width: 640px;
+	flex: 1;
+}
+
+.reports-search-icon {
+	position: absolute;
+	left: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	color: #94a3b8;
+}
+
+.reports-search-input {
+	width: 100%;
+	padding: 10px 36px 10px 36px;
+	border-radius: 12px;
+	border: 1px solid #e5e7eb;
+	background: #fff;
+	outline: none;
+	box-shadow: 0 1px 0 #00000008;
+}
+
+.reports-clear {
+	position: absolute;
+	right: 10px;
+	top: 50%;
+	transform: translateY(-50%);
+	border: none;
+	background: transparent;
+	font-size: 18px;
+	line-height: 1;
+	cursor: pointer;
+	color: #94a3b8;
+}
+
+.reports-count {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	color: #64748b;
+	font-weight: 600;
+}
+
+.reports-filter-mode {
+	padding: 6px 10px;
+	background: #f1f5f9;
+	border: 1px solid #e5e7eb;
+	border-radius: 999px;
+	color: #0f172a;
+	font-size: 12px;
+}
+
+.reports-count-text {
+	font-size: 14px;
+}
+
