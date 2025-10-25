@@ -20,7 +20,7 @@ class StoreCourseRequest extends FormRequest
             'instructor'    => 'nullable|string|max:255',
             'credits'       => 'nullable|integer|min:0|max:30',
             'max_students'  => 'nullable|integer|min:1',
-            'status'        => 'required|in:Active,Inactive',
+            'status'        => 'required|in:Active,Inactive,Archived',
         ];
     }
 
@@ -33,7 +33,7 @@ class StoreCourseRequest extends FormRequest
             'credits.min' => 'Credits must be at least 0.',
             'credits.max' => 'Credits cannot exceed 30.',
             'max_students.min' => 'Maximum students must be at least 1.',
-            'status.in' => 'Status must be Active or Inactive.',
+            'status.in' => 'Status must be Active, Inactive, or Archived.',
         ];
     }
 }

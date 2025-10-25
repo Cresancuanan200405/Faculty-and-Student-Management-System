@@ -33,6 +33,12 @@ const Departments = () => {
   const [coursesData, setCoursesData] = useState([]);
   const [selectedSubDept, setSelectedSubDept] = useState(null);
 
+  // Typed delete confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
+
   // Fetch departments
   const loadDepartments = async () => {
     try {
@@ -163,26 +169,34 @@ const Departments = () => {
     }
   };
 
-  const deleteDepartment = async id => {
-    if (!confirm('Are you sure you want to delete this department? This action cannot be undone.')) return;
+  const openDeleteDepartment = (dept) => {
+    setDeleteTarget(dept);
+    setDeleteConfirmText('');
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteDepartment = async () => {
+    if (deleteConfirmText !== 'Delete' || !deleteTarget) return;
+    setDeleteInProgress(true);
     try {
-      const departmentToDelete = departments.find(d => d.id === id);
-      const deptName = departmentToDelete?.name || 'Unknown department';
-      
-      const response = await axios.delete(`/api/departments/${id}`);
+      const deptName = deleteTarget?.name || 'Unknown department';
+      const response = await axios.delete(`/api/departments/${deleteTarget.id}`);
       if (response.data.success) {
         await loadDepartments();
         notifications.delete(`Department "${deptName}" has been deleted!`);
-        
-        // Dispatch event for dashboard activity tracking
         window.dispatchEvent(new CustomEvent('departmentDeleted', {
-          detail: departmentToDelete,
+          detail: deleteTarget,
           bubbles: true
         }));
       }
     } catch (err) {
       const errorMessage = err.response?.data?.message || 'Failed to delete department';
       notifications.info(`Error: ${errorMessage}`);
+    } finally {
+      setDeleteInProgress(false);
+      setShowDeleteConfirm(false);
+      setDeleteTarget(null);
+      setDeleteConfirmText('');
     }
   };
 
@@ -357,16 +371,6 @@ const Departments = () => {
               <h2 className="departments-section-title">Academic Programs</h2>
               <p className="departments-section-subtitle">Manage program information and faculty assignments</p>
             </div>
-            <button
-              className="add-department-btn"
-              onClick={() => {
-                setEditingDepartment(null);
-                setForm(initialForm);
-                setShowModal(true);
-              }}
-            >
-              Add Program
-            </button>
           </div>
 
           {/* Filters */}
@@ -418,9 +422,19 @@ const Departments = () => {
                       <td><span className="count-number">{dept.course_count}</span></td>
                       <td><span className="budget-amount">${((parseFloat(dept.budget) || 0) / 1000000).toFixed(1)}M</span></td>
                       <td>
-                        <span className={`status-pill ${dept.status.toLowerCase()}`}>
-                          {dept.status}
-                        </span>
+                        {(() => {
+                          const s = String(dept.status || '').toLowerCase();
+                          const color = s === 'active' ? '#16a34a' : s === 'inactive' ? '#f59e0b' : '#6b7280';
+                          return (
+                            <span
+                              className={`status-pill ${s}`}
+                              style={{ background: `${color}22`, color, border: `1px solid ${color}44` }}
+                              title={dept.status}
+                            >
+                              {dept.status || '—'}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td>
                         <div className="row-actions">
@@ -436,7 +450,7 @@ const Departments = () => {
                           </button>
                           <button 
                             className="icon-btn danger"
-                            onClick={() => deleteDepartment(dept.id)}
+                            onClick={() => openDeleteDepartment(dept)}
                             title="Delete department"
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" fill="none">
@@ -666,6 +680,54 @@ const Departments = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Program confirm (typed) */}
+      {showDeleteConfirm && (
+        <div
+          className="students-modal-bg"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500 }}
+          onClick={() => !deleteInProgress && setShowDeleteConfirm(false)}
+        >
+          <div
+            className="students-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#fff', width: '100%', maxWidth: 440, padding: '32px 36px', borderRadius: 22, boxShadow: '0 8px 28px rgba(0,0,0,.18)' }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>Delete Program</h3>
+            <div style={{ fontSize: 14, lineHeight: 1.5, color: '#374151', marginBottom: 18 }}>
+              <b>{deleteTarget?.name}</b>
+              <br /><br />
+              Type <code style={{ background: '#f3f4f6', padding: '2px 4px', borderRadius: 4 }}>Delete</code> to confirm. This action cannot be undone.
+            </div>
+            <input
+              autoFocus
+              type="text"
+              placeholder='Type "Delete" to confirm'
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #d1d5db', marginBottom: 20, fontSize: 14 }}
+              disabled={deleteInProgress}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <button type="button" onClick={() => setShowDeleteConfirm(false)} disabled={deleteInProgress} style={{ background: '#e5e7eb', border: 'none', padding: '8px 18px', borderRadius: 10, fontWeight: 600 }}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteDepartment}
+                disabled={deleteConfirmText !== 'Delete' || deleteInProgress}
+                style={{
+                  background: deleteConfirmText === 'Delete' && !deleteInProgress ? '#dc2626' : '#fca5a5',
+                  color: '#fff', border: 'none', padding: '8px 22px', borderRadius: 10, fontWeight: 600,
+                  cursor: deleteConfirmText === 'Delete' && !deleteInProgress ? 'pointer' : 'not-allowed'
+                }}
+              >
+                {deleteInProgress ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -29,6 +29,12 @@ const Courses = () => {
   const [filterStatus, setFilterStatus] = useState('All Courses');
   const [activeTab, setActiveTab] = useState('Course List');
   const [editingCourse, setEditingCourse] = useState(null);
+  
+  // Typed delete confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
 
   // Load all data
   const loadCourses = async () => {
@@ -268,29 +274,34 @@ const Courses = () => {
     }
   };
 
-  const deleteCourse = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this course?')) {
-      return;
-    }
-    
+  const deleteCourse = (courseOrId) => {
+    const course = typeof courseOrId === 'object' ? courseOrId : courses.find(c => c.id === courseOrId);
+    if (!course) return;
+    setDeleteTarget(course);
+    setDeleteConfirmText('');
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteCourse = async () => {
+    if (deleteConfirmText !== 'Delete' || !deleteTarget) return;
+    setDeleteInProgress(true);
     try {
-      const courseToDelete = courses.find(c => c.id === id);
-      const courseName = courseToDelete?.name || 'Unknown course';
-      
-      const response = await axios.delete(`/api/courses/${id}`);
-      
+      const response = await axios.delete(`/api/courses/${deleteTarget.id}`);
       if (response.data && response.data.success) {
-        setCourses(prevCourses => prevCourses.filter(c => c.id !== id));
-        
-        notifications.delete(`Course "${courseName}" has been deleted!`);
-        
+        setCourses(prevCourses => prevCourses.filter(c => c.id !== deleteTarget.id));
+        notifications.delete(`Course "${deleteTarget?.name || 'Unknown course'}" has been deleted!`);
         window.dispatchEvent(new CustomEvent('courseDeleted', { 
-          detail: courseToDelete
+          detail: deleteTarget
         }));
       }
     } catch (error) {
       console.error('Error deleting course:', error);
       notifications.info('Failed to delete course');
+    } finally {
+      setDeleteInProgress(false);
+      setShowDeleteConfirm(false);
+      setDeleteTarget(null);
+      setDeleteConfirmText('');
     }
   };
 
@@ -473,17 +484,6 @@ const Courses = () => {
         <div className="courses-main-section">
           <div className="courses-section-header">
             <h2 className="courses-section-title">Course List</h2>
-            <button
-              type="button"
-              className="add-course-btn"
-              onClick={() => setShowModal(true)}
-            >
-              {/* plus icon */}
-              <svg className="btn-icon" width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-              Add Course
-            </button>
           </div>
 
           {/* Filters */}
@@ -526,7 +526,7 @@ const Courses = () => {
                   <th>Instructor</th>
                   <th className="center">Credits</th>
                   <th>Status</th>
-                  <th>Actions</th>
+                  <th className="center">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -537,7 +537,6 @@ const Courses = () => {
                     <tr
                       key={course.id}
                       className="courses-data-row"
-                      onClick={() => editCourse(course)}
                     >
                       <td className="course-cell">
                         <div className="course-name">{course.name}</div>
@@ -554,11 +553,21 @@ const Courses = () => {
                         <span className="count-number">{course.credits ?? 0}</span>
                       </td>
                       <td>
-                        <span className={`status-pill ${String(course.status || '').toLowerCase()}`}>
-                          {course.status}
-                        </span>
+                        {(() => {
+                          const s = String(course.status || '').toLowerCase();
+                          const color = s === 'active' ? '#16a34a' : s === 'inactive' ? '#f59e0b' : '#6b7280';
+                          return (
+                            <span
+                              className={`status-pill ${s}`}
+                              style={{ background: `${color}22`, color, border: `1px solid ${color}44` }}
+                              title={course.status}
+                            >
+                              {course.status || '—'}
+                            </span>
+                          );
+                        })()}
                       </td>
-                      <td>
+                      <td className="center">
                         <div className="row-actions">
                           <button 
                             className="icon-btn danger"
@@ -566,7 +575,7 @@ const Courses = () => {
                             type="button"
                             onClick={(e) => { 
                               e.stopPropagation(); 
-                              deleteCourse(course.id); 
+                              deleteCourse(course); 
                             }}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" stroke="currentColor" fill="none">
@@ -695,7 +704,7 @@ const Courses = () => {
                     <button 
                       className="course-action-btn delete"
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); deleteCourse(course.id); }}
+                      onClick={(e) => { e.stopPropagation(); deleteCourse(course); }}
                       title="Delete course"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
@@ -771,6 +780,54 @@ const Courses = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Course confirm (typed) */}
+      {showDeleteConfirm && (
+        <div
+          className="students-modal-bg"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500 }}
+          onClick={() => !deleteInProgress && setShowDeleteConfirm(false)}
+        >
+          <div
+            className="students-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#fff', width: '100%', maxWidth: 440, padding: '32px 36px', borderRadius: 22, boxShadow: '0 8px 28px rgba(0,0,0,.18)' }}
+          >
+            <h3 style={{ marginTop: 0, marginBottom: 6 }}>Delete Course</h3>
+            <div style={{ fontSize: 14, lineHeight: 1.5, color: '#374151', marginBottom: 18 }}>
+              <b>{deleteTarget?.name}</b>
+              <br /><br />
+              Type <code style={{ background: '#f3f4f6', padding: '2px 4px', borderRadius: 4 }}>Delete</code> to confirm. This action cannot be undone.
+            </div>
+            <input
+              autoFocus
+              type="text"
+              placeholder='Type "Delete" to confirm'
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #d1d5db', marginBottom: 20, fontSize: 14 }}
+              disabled={deleteInProgress}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <button type="button" onClick={() => setShowDeleteConfirm(false)} disabled={deleteInProgress} style={{ background: '#e5e7eb', border: 'none', padding: '8px 18px', borderRadius: 10, fontWeight: 600 }}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteCourse}
+                disabled={deleteConfirmText !== 'Delete' || deleteInProgress}
+                style={{
+                  background: deleteConfirmText === 'Delete' && !deleteInProgress ? '#dc2626' : '#fca5a5',
+                  color: '#fff', border: 'none', padding: '8px 22px', borderRadius: 10, fontWeight: 600,
+                  cursor: deleteConfirmText === 'Delete' && !deleteInProgress ? 'pointer' : 'not-allowed'
+                }}
+              >
+                {deleteInProgress ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

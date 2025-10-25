@@ -80,7 +80,7 @@ const Students = () => {
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [editLoading, setEditLoading] = useState(false);
   const [customYears, setCustomYears] = useState(() => {
-    const saved = localStorage.getItem("customYears");
+    const saved = localStorage.getItem("studentsCustomYears") || localStorage.getItem("customYears");
     return saved ? JSON.parse(saved) : [];
   });
   const [showAddYearModal, setShowAddYearModal] = useState(false);
@@ -88,7 +88,7 @@ const Students = () => {
   const [yearMenuOpen, setYearMenuOpen] = useState(null);
   const yearMenuRef = useRef(null);
   const [archivedYears, setArchivedYears] = useState(() => {
-    const saved = localStorage.getItem("archivedYears");
+    const saved = localStorage.getItem("studentsArchivedYears") || localStorage.getItem("archivedYears");
     return saved ? JSON.parse(saved) : [];
   });
   const [restoredYearLabel, setRestoredYearLabel] = useState("");
@@ -106,15 +106,53 @@ const Students = () => {
   const [restoreTargetYear, setRestoreTargetYear] = useState(null);
   const [restoreConfirmText, setRestoreConfirmText] = useState("");
   const [restoreInProgress, setRestoreInProgress] = useState(false);
+  // Typed delete for Year Folder
+  const [showDeleteYearConfirm, setShowDeleteYearConfirm] = useState(false);
+  const [deleteYearTarget, setDeleteYearTarget] = useState(null);
+  const [deleteYearConfirmText, setDeleteYearConfirmText] = useState("");
+  const [deleteYearInProgress, setDeleteYearInProgress] = useState(false);
+  // NEW: selection + typed delete modal states for single and bulk deletion
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleteInProgress, setDeleteInProgress] = useState(false);
+  const [deleteTargets, setDeleteTargets] = useState([]); // array of student objects
+
+  // Academic Year statuses from Settings (Active, Inactive, Completed, Archived)
+  const [ayStatuses, setAyStatuses] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('settings_academic_year_statuses') || '{}'); } catch { return {}; }
+  });
+
+  const getYearKey = useCallback((labelOrValue) => {
+    if (!labelOrValue) return '';
+    return String(labelOrValue).replace(/^SY\s*/i, '').trim();
+  }, []);
+
+  const getAyStatus = useCallback((labelOrValue) => {
+    const key = getYearKey(labelOrValue);
+    // Default to Active if not explicitly set in Settings (only block when marked Inactive/Completed)
+    return ayStatuses[key] || 'Active';
+  }, [ayStatuses, getYearKey]);
+
+  // Note: A global/local normalizeYearLabel(raw) likely exists later in this file; reuse that for formatting labels.
+
+  useEffect(() => {
+    const onStatusUpdated = () => {
+      try { setAyStatuses(JSON.parse(localStorage.getItem('settings_academic_year_statuses') || '{}')); } catch {}
+    };
+    window.addEventListener('academicYearStatusUpdated', onStatusUpdated);
+    return () => window.removeEventListener('academicYearStatusUpdated', onStatusUpdated);
+  }, []);
 
   const allYearFolders = [...yearFolders, ...customYears];
 
   useEffect(() => {
-    localStorage.setItem("customYears", JSON.stringify(customYears));
+    try { localStorage.setItem("studentsCustomYears", JSON.stringify(customYears)); } catch (_) {}
   }, [customYears]);
 
   useEffect(() => {
-    localStorage.setItem("archivedYears", JSON.stringify(archivedYears));
+    try { localStorage.setItem("studentsArchivedYears", JSON.stringify(archivedYears)); } catch (_) {}
   }, [archivedYears]);
 
   useEffect(() => {
@@ -156,10 +194,48 @@ const Students = () => {
     window.addEventListener("courseAdded", handleCourseChange);
     window.addEventListener("courseUpdated", handleCourseChange);
     window.addEventListener("courseDeleted", handleCourseChange);
+    const handleAcademicYearAdded = (e) => {
+      const detail = e?.detail || {};
+      if (detail.target !== 'Students') return;
+      const label = detail.label;
+      if (!label) return;
+      setCustomYears((prev) => {
+        if (prev.includes(label)) return prev;
+        const updated = [...prev, label];
+        try { localStorage.setItem('studentsCustomYears', JSON.stringify(updated)); } catch (_) {}
+        return updated;
+      });
+      notifications.add(`School Year folder ${label} added from Settings.`);
+    };
+    const handleAcademicYearArchived = (e) => {
+      const label = e?.detail?.label;
+      if (!label) return;
+      setArchivedYears(prev => {
+        if (prev.includes(label)) return prev;
+        const updated = [...prev, label];
+        try { localStorage.setItem('studentsArchivedYears', JSON.stringify(updated)); } catch (_) {}
+        return updated;
+      });
+    };
+    const handleAcademicYearRestored = (e) => {
+      const label = e?.detail?.label;
+      if (!label) return;
+      setArchivedYears(prev => {
+        const updated = prev.filter(y => y !== label);
+        try { localStorage.setItem('studentsArchivedYears', JSON.stringify(updated)); } catch (_) {}
+        return updated;
+      });
+    };
+    window.addEventListener('academicYearAdded', handleAcademicYearAdded);
+    window.addEventListener('academicYearArchived', handleAcademicYearArchived);
+    window.addEventListener('academicYearRestored', handleAcademicYearRestored);
     return () => {
       window.removeEventListener("courseAdded", handleCourseChange);
       window.removeEventListener("courseUpdated", handleCourseChange);
       window.removeEventListener("courseDeleted", handleCourseChange);
+      window.removeEventListener('academicYearAdded', handleAcademicYearAdded);
+      window.removeEventListener('academicYearArchived', handleAcademicYearArchived);
+      window.removeEventListener('academicYearRestored', handleAcademicYearRestored);
     };
   }, [fetchCourses]);
 
@@ -175,8 +251,42 @@ const Students = () => {
       setError("Please select a School Year.");
       return;
     }
+    // Block adding to Inactive or Completed SY
+    const chosenStatus = getAyStatus(form.academic_year);
+    if (['inactive','completed'].includes(String(chosenStatus).toLowerCase())) {
+      setError(`You cannot add a student to ${normalizeYearLabel(form.academic_year)} because it is marked as ${chosenStatus}.`);
+      return;
+    }
+
+    // Broadcast to Settings so it reflects immediately in Academic Years
+    try {
+      window.dispatchEvent(new CustomEvent('academicYearAdded', {
+        detail: { target: 'Students', label },
+        bubbles: true
+      }));
+    } catch (_) {}
+
+    // Ensure the global AY status map includes this year (default Active)
+    try {
+      const key = label.replace(/^SY\s*/i, '');
+      const map = JSON.parse(localStorage.getItem('settings_academic_year_statuses') || '{}');
+      if (!map[key]) {
+        map[key] = 'Active';
+        localStorage.setItem('settings_academic_year_statuses', JSON.stringify(map));
+        window.dispatchEvent(new CustomEvent('academicYearStatusUpdated', { detail: { statuses: map } }));
+      }
+    } catch (_) {}
+
     if (!form.department) {
       setError("Please select a Department.");
+      return;
+    }
+    // Guard against archived department selection
+    const selectedDeptObj = (departmentsData || []).find(
+      d => (d?.name || "").trim().toLowerCase() === form.department.trim().toLowerCase()
+    );
+    if (selectedDeptObj && (selectedDeptObj.status || "").toLowerCase() === "archived") {
+      setError("The selected department is archived and cannot be chosen.");
       return;
     }
     if (!form.first_name || !form.last_name || !form.email) {
@@ -190,6 +300,18 @@ const Students = () => {
     if (form.birthdate && new Date(form.birthdate) > new Date()) {
       setError("Birthdate cannot be in the future.");
       return;
+    }
+    // Guard against archived course selection (for dynamic course-driven programs)
+    if (form.program && !departmentSubfolders[form.department]) {
+      const deptLower = form.department.trim().toLowerCase();
+      const courseMatch = (coursesData || []).find(c =>
+        ((c.department || c.program || "").trim().toLowerCase()) === deptLower &&
+        ((c.name || c.program || "").trim().toLowerCase()) === form.program.trim().toLowerCase()
+      );
+      if (courseMatch && (courseMatch.status || "").toLowerCase() === "archived") {
+        setError("The selected course/program is archived and cannot be chosen.");
+        return;
+      }
     }
 
     const submitData = { ...form };
@@ -326,14 +448,25 @@ const Students = () => {
   };
 
   const handleDeleteYear = (label) => {
-    const input = window.prompt(
-      `Type CONFIRM to permanently delete the folder "${label}". This cannot be undone.`
-    );
-    if (input && input.trim().toLowerCase() === "confirm") {
+    // Open typed confirmation modal for deleting a School Year folder
+    setDeleteYearTarget(label);
+    setDeleteYearConfirmText("");
+    setShowDeleteYearConfirm(true);
+  };
+
+  const confirmDeleteYear = async () => {
+    if (deleteYearConfirmText !== "Delete" || !deleteYearTarget) return;
+    setDeleteYearInProgress(true);
+    const label = deleteYearTarget;
+    try {
       setCustomYears((prev) => prev.filter((y) => y !== label));
       setYearMenuOpen(null);
-      
       notifications.delete(`School Year folder ${label} deleted successfully!`);
+    } finally {
+      setDeleteYearInProgress(false);
+      setShowDeleteYearConfirm(false);
+      setDeleteYearTarget(null);
+      setDeleteYearConfirmText("");
     }
   };
 
@@ -342,7 +475,7 @@ const Students = () => {
       if (prev.includes(year)) return prev;
       const updated = [...prev, year];
       try {
-        localStorage.setItem("archivedYears", JSON.stringify(updated));
+        localStorage.setItem("studentsArchivedYears", JSON.stringify(updated));
       } catch (_) {}
       return updated;
     });
@@ -463,26 +596,102 @@ const Students = () => {
   );
 
   const handleDeleteClick = async (student) => {
-    const input = window.prompt(
-      `Type CONFIRM to permanently delete the student "${student.first_name} ${student.last_name}". This cannot be undone.`
-    );
-    if (input && input.trim().toLowerCase() === "confirm") {
-      try {
-        await axios.delete(`/api/students/${student.id}`);
-        setStudents(students.filter(s => s.id !== student.id));
-        
-        notifications.delete(`Student ${student.first_name} ${student.last_name} deleted successfully!`);
+    // Open typed confirmation modal for single delete
+    setDeleteTargets([student]);
+    setDeleteConfirmText("");
+    setShowDeleteConfirm(true);
+  };
 
-        window.dispatchEvent(new CustomEvent('studentDeleted', {
-          detail: student,
-          bubbles: true
-        }));
-        
-      } catch (err) {
-        notifications.info("Failed to delete student.");
+  const getCurrentVisibleList = useCallback(() => {
+    // Determine which list is visible for selection/bulk actions
+    if (selectedCourse) {
+      return filteredStudents.filter(stu => {
+        const stuYear = normalizeYearLabel(stu.academic_year);
+        return (
+          stuYear === selectedYear &&
+          (stu.program || "").trim().toLowerCase() === selectedCourse.trim().toLowerCase()
+        );
+      });
+    }
+    if (selectedYear && (selectedSubDept || selectedDept)) {
+      const key = selectedSubDept || selectedDept;
+      return (
+        (studentsByYearDept[selectedYear] && studentsByYearDept[selectedYear][key]) || []
+      );
+    }
+    if (!selectedYear && !showArchived && isSearchActive) {
+      return filteredStudents;
+    }
+    return [];
+  }, [filteredStudents, isSearchActive, selectedCourse, selectedDept, selectedSubDept, selectedYear, showArchived, studentsByYearDept]);
+
+  const toggleSelectAll = () => {
+    const list = getCurrentVisibleList();
+    const allIds = new Set(list.map(s => s.id));
+    let next = new Set(selectedIds);
+    const allSelected = list.length > 0 && list.every(s => selectedIds.has(s.id));
+    if (allSelected) {
+      // clear only those in current view
+      list.forEach(s => next.delete(s.id));
+    } else {
+      allIds.forEach(id => next.add(id));
+    }
+    setSelectedIds(next);
+  };
+
+  const openBulkDelete = () => {
+    const list = getCurrentVisibleList();
+    const targets = list.filter(s => selectedIds.has(s.id));
+    if (targets.length === 0) return;
+    setDeleteTargets(targets);
+    setDeleteConfirmText("");
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteStudents = async () => {
+    if (deleteConfirmText !== "Delete" || deleteTargets.length === 0) return;
+    setDeleteInProgress(true);
+    try {
+      if (deleteTargets.length === 1) {
+        const s = deleteTargets[0];
+        await axios.delete(`/api/students/${s.id}`);
+        setStudents(prev => (prev || []).filter(x => x.id !== s.id));
+        notifications.delete(`Student ${s.first_name} ${s.last_name} deleted successfully!`);
+        try { window.dispatchEvent(new CustomEvent('studentDeleted', { detail: s, bubbles: true })); } catch (_) {}
+      } else {
+        const ids = deleteTargets.map(s => s.id);
+        const names = deleteTargets.map(s => `${s.first_name} ${s.last_name}`);
+        const results = await Promise.allSettled(ids.map(id => axios.delete(`/api/students/${id}`)));
+        const successIds = new Set(ids.filter((_, i) => results[i].status === 'fulfilled'));
+        setStudents(prev => (prev || []).filter(x => !successIds.has(x.id)));
+        const successCount = successIds.size;
+        if (successCount > 0) {
+          notifications.delete(`Deleted ${successCount} student${successCount > 1 ? 's' : ''}.`);
+        }
+        // emit events for each successfully deleted
+        deleteTargets.forEach((s, i) => {
+          if (results[i].status === 'fulfilled') {
+            try { window.dispatchEvent(new CustomEvent('studentDeleted', { detail: s, bubbles: true })); } catch (_) {}
+          }
+        });
       }
+    } catch (e) {
+      notifications.info('Failed to delete some students.');
+    } finally {
+      setDeleteInProgress(false);
+      setShowDeleteConfirm(false);
+      setDeleteTargets([]);
+      setDeleteConfirmText("");
+      setSelectionMode(false);
+      setSelectedIds(new Set());
     }
   };
+
+  // Reset selection when navigating folders
+  useEffect(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, [selectedYear, selectedDept, selectedSubDept, selectedCourse, isSearchActive]);
 
   useEffect(() => {
     if (showArchived) {
@@ -527,9 +736,11 @@ const Students = () => {
     if (!form.department) return [];
     const deptLower = form.department.trim().toLowerCase();
     const programs = coursesData
-      .filter(course =>
-        ((course.department || course.program || "").trim().toLowerCase()) === deptLower
-      )
+      .filter(course => {
+        const matchDept = ((course.department || course.program || "").trim().toLowerCase()) === deptLower;
+        const isArchived = (course.status || "").toLowerCase() === "archived";
+        return matchDept && !isArchived;
+      })
       .map(course => (course.name || course.program || "").trim())
       .filter(Boolean);
     return Array.from(new Set(programs));
@@ -539,9 +750,10 @@ const Students = () => {
     if (!form.department) return;
     if (departmentSubfolders[form.department]) return;
     const deptLower = form.department.trim().toLowerCase();
-    const matches = coursesData.filter(c =>
-      ((c.department || c.program || "").trim().toLowerCase()) === deptLower
-    );
+    const matches = coursesData.filter(c => {
+      const matchDept = ((c.department || c.program || "").trim().toLowerCase()) === deptLower;
+      return matchDept; // include all for modal; we'll disable archived in UI
+    });
     if (matches.length > 0 && !form.program && !courseModalWasShownRef.current) {
       setPendingDeptCourses(matches);
       setShowCourseSelectModal(true);
@@ -741,6 +953,48 @@ const Students = () => {
         </div>
       )}
 
+      {showDeleteYearConfirm && (
+        <div
+          className="students-modal-bg"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2550 }}
+          onClick={() => !deleteYearInProgress && setShowDeleteYearConfirm(false)}
+        >
+          <div className="students-modal" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', width: '100%', maxWidth: 460, padding: '28px 32px', borderRadius: 20 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Delete School Year Folder</h3>
+            <div style={{ fontSize: 14, color: '#374151', lineHeight: 1.5, marginBottom: 16 }}>
+              This action is permanent and cannot be undone.
+              <br />
+              Folder: <b>{deleteYearTarget}</b>
+              <br />
+              <br />
+              Type <code style={{ background: '#f3f4f6', padding: '2px 4px', borderRadius: 4 }}>Delete</code> to confirm.
+            </div>
+            <input
+              autoFocus
+              type="text"
+              placeholder='Type "Delete" to confirm'
+              value={deleteYearConfirmText}
+              onChange={(e) => setDeleteYearConfirmText(e.target.value)}
+              disabled={deleteYearInProgress}
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #d1d5db', marginBottom: 20, fontSize: 14 }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <button type="button" onClick={() => setShowDeleteYearConfirm(false)} disabled={deleteYearInProgress}
+                style={{ background: '#e5e7eb', border: 'none', padding: '8px 18px', borderRadius: 10, fontWeight: 700 }}
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={confirmDeleteYear}
+                disabled={deleteYearConfirmText !== 'Delete' || deleteYearInProgress}
+                style={{ background: deleteYearConfirmText === 'Delete' && !deleteYearInProgress ? '#dc2626' : '#fca5a5', color: '#fff', border: 'none', padding: '8px 22px', borderRadius: 10, fontWeight: 700, cursor: deleteYearConfirmText === 'Delete' && !deleteYearInProgress ? 'pointer' : 'not-allowed' }}
+              >
+                {deleteYearInProgress ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="students-banner">
         <div
           style={{
@@ -890,8 +1144,12 @@ const Students = () => {
             <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
               {visibleYearFolders.map((label) => {
                 const total = getStudentCountForYear(label);
+                const status = getAyStatus(label);
+                const statusLC = String(status).toLowerCase();
+                const borderColor = statusLC === 'active' ? '#16a34a' : statusLC === 'inactive' ? '#f59e0b' : statusLC === 'completed' ? '#0ea5e9' : '#e5e7eb';
+                const dotColor = borderColor;
                 return (
-                  <div key={label} className="students-folder">
+                  <div key={label} className="students-folder" style={{ borderLeft: `6px solid ${borderColor}` }}>
                     <div
                       style={{ display: "flex", alignItems: "center", flex: 1 }}
                       onClick={() => setSelectedYear(label)}
@@ -905,7 +1163,17 @@ const Students = () => {
                       >
                         <path d="M10 4H2v16h20V6H12l-2-2z" fill="#6366f1" />
                       </svg>
-                      {label}
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                        {label}
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          background: `${dotColor}1A`, color: dotColor, border: `1px solid ${dotColor}44`,
+                          padding: '2px 8px', borderRadius: 999, fontSize: 12, fontWeight: 700
+                        }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotColor }} />
+                          {status}
+                        </span>
+                      </span>
                       <span
                         style={{
                           marginLeft: 12,
@@ -1330,7 +1598,46 @@ const Students = () => {
             </div>
 
             <div className="students-list-table">
+              {/* Selection toolbar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0 8px 0' }}>
+                {!selectionMode ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectionMode(true)}
+                    style={{
+                      background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe',
+                      padding: '6px 12px', borderRadius: 8, fontWeight: 700
+                    }}
+                  >
+                    Select
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, userSelect: 'none', cursor: 'pointer' }}>
+                      <input type="checkbox" onChange={toggleSelectAll}
+                        checked={(() => { const list = getCurrentVisibleList(); return list.length > 0 && list.every(s => selectedIds.has(s.id)); })()}
+                      />
+                      Select all
+                    </label>
+                    <button type="button" onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+                      style={{ background: '#e5e7eb', border: 'none', padding: '6px 12px', borderRadius: 8, fontWeight: 700 }}
+                    >
+                      Cancel
+                    </button>
+                    <button type="button" onClick={openBulkDelete} disabled={[...selectedIds].length === 0}
+                      style={{
+                        background: [...selectedIds].length === 0 ? '#fecaca' : '#ef4444', color: '#fff',
+                        border: 'none', padding: '6px 12px', borderRadius: 8, fontWeight: 700,
+                        cursor: [...selectedIds].length === 0 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Delete Selected ({[...selectedIds].length})
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="students-list-header">
+                {selectionMode && <div style={{ width: 28 }}>&nbsp;</div>}
                 <div>Student</div>
                 <div>Contact</div>
                 <div>Status</div>
@@ -1357,6 +1664,19 @@ const Students = () => {
                   }
                   return list.map(stu => (
                     <div className="students-list-row" key={stu.id}>
+                      {selectionMode && (
+                        <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(stu.id)}
+                            onChange={(e) => {
+                              const next = new Set(selectedIds);
+                              if (e.target.checked) next.add(stu.id); else next.delete(stu.id);
+                              setSelectedIds(next);
+                            }}
+                          />
+                        </div>
+                      )}
                       <div className="students-list-student">
                         <img
                           src={stu.avatar || "/avatar1.png"}
@@ -1447,6 +1767,19 @@ const Students = () => {
                 }
                 return list.map(stu => (
                   <div className="students-list-row" key={stu.id}>
+                    {selectionMode && (
+                      <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(stu.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedIds);
+                            if (e.target.checked) next.add(stu.id); else next.delete(stu.id);
+                            setSelectedIds(next);
+                          }}
+                        />
+                      </div>
+                    )}
                     <div className="students-list-student">
                       <img
                         src={stu.avatar || "/avatar1.png"}
@@ -1544,7 +1877,46 @@ const Students = () => {
               Search Results
             </div>
             <div className="students-list-table">
+              {/* Selection toolbar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0 8px 0' }}>
+                {!selectionMode ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectionMode(true)}
+                    style={{
+                      background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe',
+                      padding: '6px 12px', borderRadius: 8, fontWeight: 700
+                    }}
+                  >
+                    Select
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, userSelect: 'none', cursor: 'pointer' }}>
+                      <input type="checkbox" onChange={toggleSelectAll}
+                        checked={(() => { const list = getCurrentVisibleList(); return list.length > 0 && list.every(s => selectedIds.has(s.id)); })()}
+                      />
+                      Select all
+                    </label>
+                    <button type="button" onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }}
+                      style={{ background: '#e5e7eb', border: 'none', padding: '6px 12px', borderRadius: 8, fontWeight: 700 }}
+                    >
+                      Cancel
+                    </button>
+                    <button type="button" onClick={openBulkDelete} disabled={[...selectedIds].length === 0}
+                      style={{
+                        background: [...selectedIds].length === 0 ? '#fecaca' : '#ef4444', color: '#fff',
+                        border: 'none', padding: '6px 12px', borderRadius: 8, fontWeight: 700,
+                        cursor: [...selectedIds].length === 0 ? 'not-allowed' : 'pointer'
+                      }}
+                    >
+                      Delete Selected ({[...selectedIds].length})
+                    </button>
+                  </div>
+                )}
+              </div>
               <div className="students-list-header">
+                {selectionMode && <div style={{ width: 28 }}>&nbsp;</div>}
                 <div>Student</div>
                 <div>Department/Program</div>
                 <div>Contact</div>
@@ -1555,6 +1927,19 @@ const Students = () => {
               {filteredStudents.length > 0 ? (
                 filteredStudents.map((stu) => (
                   <div className="students-list-row" key={stu.id}>
+                    {selectionMode && (
+                      <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(stu.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedIds);
+                            if (e.target.checked) next.add(stu.id); else next.delete(stu.id);
+                            setSelectedIds(next);
+                          }}
+                        />
+                      </div>
+                    )}
                     <div className="students-list-student">
                       <img
                         src={stu.avatar || "/avatar1.png"}
@@ -1702,14 +2087,20 @@ const Students = () => {
                   required
                 >
                   <option value="">Select School Year</option>
-                  {allYearFolders.map((year) => (
-                    <option
-                      key={year}
-                      value={year.replace(/^SY\s*/, "")}
-                    >
-                      {year}
-                    </option>
-                  ))}
+                  {allYearFolders.map((year) => {
+                    const status = getAyStatus(year);
+                    const isActive = String(status).toLowerCase() === 'active';
+                    const keyVal = year.replace(/^SY\s*/, "");
+                    return (
+                      <option
+                        key={year}
+                        value={keyVal}
+                        disabled={!isActive}
+                      >
+                        {year}{!isActive ? ` (${status})` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="students-modal-row">
@@ -1738,11 +2129,14 @@ const Students = () => {
                   required
                 >
                   <option value="">Select Department</option>
-                  {departmentsData.map((dept) => (
-                    <option key={dept.id} value={dept.name}>
-                      {dept.name}
-                    </option>
-                  ))}
+                  {departmentsData.map((dept) => {
+                    const isArchived = ((dept.status || "").toLowerCase() === "archived");
+                    return (
+                      <option key={dept.id} value={dept.name} disabled={isArchived}>
+                        {dept.name}{isArchived ? " (Archived)" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               {departmentSubfolders[form.department] && (
@@ -2161,6 +2555,7 @@ const Students = () => {
             <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 24 }}>
               {pendingDeptCourses.map(course => {
                 const courseName = (course.name || course.program || "Untitled").trim();
+                const isArchived = ((course.status || "").toLowerCase() === "archived");
                 return (
                   <div
                     key={course.id || courseName}
@@ -2172,27 +2567,41 @@ const Students = () => {
                       border: "1px solid #e5e7eb",
                       borderRadius: 10,
                       marginBottom: 12,
-                                           cursor: "pointer",
+                      cursor: isArchived ? "not-allowed" : "pointer",
                       background: form.program === courseName ? "#eef2ff" : "#fff",
                       transition: "background .15s"
                     }}
                     onClick={() => {
+                      if (isArchived) return;
                       setForm(f => ({ ...f, program: courseName }));
                       setShowCourseSelectModal(false);
                     }}
                   >
-                    <div style={{ fontWeight: 600 }}>{courseName}</div>
+                    <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                      {courseName}
+                      {isArchived && (
+                        <span style={{
+                          fontSize: 12,
+                          background: "#e5e7eb",
+                          color: "#6b7280",
+                          borderRadius: 6,
+                          padding: "2px 6px",
+                          fontWeight: 700
+                        }}>Archived</span>
+                      )}
+                    </div>
                     <button
                       type="button"
                       style={{
                         border: "none",
-                        background: "#6366f1",
-                        color: "#fff",
+                        background: isArchived ? "#cbd5e1" : "#6366f1",
+                        color: isArchived ? "#475569" : "#fff",
                         padding: "6px 14px",
                         borderRadius: 8,
                         fontWeight: 600,
                         fontSize: ".8rem"
-                                           }}
+                      }}
+                      disabled={isArchived}
                     >
                       Choose
                     </button>
@@ -2238,6 +2647,53 @@ const Students = () => {
                 Pick a course or close to choose later.
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div
+          className="students-modal-bg"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2600 }}
+          onClick={() => !deleteInProgress && setShowDeleteConfirm(false)}
+        >
+          <div className="students-modal" onClick={(e) => e.stopPropagation()} style={{ background: '#fff', width: '100%', maxWidth: 480, padding: '28px 32px', borderRadius: 20 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 8 }}>Delete {deleteTargets.length > 1 ? `${deleteTargets.length} Students` : 'Student'}</h3>
+            <div style={{ fontSize: 14, color: '#374151', lineHeight: 1.5, marginBottom: 16 }}>
+              This action is permanent. {deleteTargets.length === 1 ? (
+                <>
+                  Are you sure you want to delete <b>{deleteTargets[0]?.first_name} {deleteTargets[0]?.last_name}</b>?
+                </>
+              ) : (
+                <>
+                  Are you sure you want to delete these {deleteTargets.length} students?
+                </>
+              )}
+              <br />
+              Type <code style={{ background: '#f3f4f6', padding: '2px 4px', borderRadius: 4 }}>Delete</code> to confirm.
+            </div>
+            <input
+              autoFocus
+              type="text"
+              placeholder='Type "Delete" to confirm'
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              disabled={deleteInProgress}
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #d1d5db', marginBottom: 20, fontSize: 14 }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+              <button type="button" onClick={() => setShowDeleteConfirm(false)} disabled={deleteInProgress}
+                style={{ background: '#e5e7eb', border: 'none', padding: '8px 18px', borderRadius: 10, fontWeight: 700 }}
+              >
+                Cancel
+              </button>
+              <button type="button" onClick={confirmDeleteStudents}
+                disabled={deleteConfirmText !== 'Delete' || deleteInProgress}
+                style={{ background: deleteConfirmText === 'Delete' && !deleteInProgress ? '#dc2626' : '#fca5a5', color: '#fff', border: 'none', padding: '8px 22px', borderRadius: 10, fontWeight: 700, cursor: deleteConfirmText === 'Delete' && !deleteInProgress ? 'pointer' : 'not-allowed' }}
+              >
+                {deleteInProgress ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

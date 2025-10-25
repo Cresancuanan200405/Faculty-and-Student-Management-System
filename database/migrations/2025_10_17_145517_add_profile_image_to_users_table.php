@@ -14,7 +14,10 @@ class AddProfileImageToUsersTable extends Migration
     public function up()
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('profile_image')->nullable()->after('profile_completed');
+            // Place the column without relying on a specific existing column to avoid order issues
+            if (!Schema::hasColumn('users', 'profile_image')) {
+                $table->string('profile_image')->nullable();
+            }
         });
     }
 
@@ -26,7 +29,9 @@ class AddProfileImageToUsersTable extends Migration
     public function down()
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('profile_image');
+            if (Schema::hasColumn('users', 'profile_image')) {
+                $table->dropColumn('profile_image');
+            }
         });
     }
 }

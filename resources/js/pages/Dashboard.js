@@ -277,39 +277,18 @@ const Dashboard = () => {
       });
   }, [students, loading]);
   
-  // Function to toggle academic year status and save to localStorage
-  const toggleYearStatus = (year) => {
-    setAcademicYears(prev => {
-      const updated = prev.map(y => 
-        y.year === year ? { ...y, status: y.status === 'Active' ? 'Completed' : 'Active' } : y
-      );
-      
-      // Save the updated statuses to localStorage
-      try {
-        // Only store the year and status to keep storage minimal
-        const statusesMap = {};
-        updated.forEach(y => {
-          statusesMap[y.year] = y.status;
-        });
-        localStorage.setItem('academic_year_statuses', JSON.stringify(statusesMap));
-      } catch (error) {
-        console.error('Error saving academic year statuses to localStorage:', error);
-      }
-      
-      return updated;
-    });
-  };
+  // Dashboard reflects statuses from Settings; no toggling here.
 
   // State to manage academic year status changes
   const [academicYearsState, setAcademicYears] = useState([]);
   
-  // Initialize academicYearsState when academicYears changes, but preserve saved statuses
+  // Initialize academicYearsState when academicYears changes, using statuses from Settings
   useEffect(() => {
     if (academicYears.length) {
       // Try to load saved statuses from localStorage
       let savedStatuses = {};
       try {
-        const saved = localStorage.getItem('academic_year_statuses');
+        const saved = localStorage.getItem('settings_academic_year_statuses');
         savedStatuses = saved ? JSON.parse(saved) : {};
       } catch (error) {
         console.error('Error loading academic year statuses from localStorage:', error);
@@ -325,6 +304,24 @@ const Dashboard = () => {
       setAcademicYears(yearsWithSavedStatus);
     }
   }, [academicYears]);
+
+  // Listen for Settings updates to AY statuses and refresh mapping
+  useEffect(() => {
+    const onStatusUpdated = (e) => {
+      // Reload map and update in place
+      try {
+        const saved = JSON.parse(localStorage.getItem('settings_academic_year_statuses') || '{}');
+        setAcademicYears(prev => (prev || []).map(y => ({
+          ...y,
+          status: saved[y.year] || y.status
+        })));
+      } catch (err) {
+        console.error('Failed to refresh AY statuses from settings:', err);
+      }
+    };
+    window.addEventListener('academicYearStatusUpdated', onStatusUpdated);
+    return () => window.removeEventListener('academicYearStatusUpdated', onStatusUpdated);
+  }, []);
 
   // NEW: Function to add an activity to the activities list
   const addActivity = useCallback((type, description, entity = null) => {
@@ -829,22 +826,16 @@ const Dashboard = () => {
               <div className="prog-card" key={year.year}>
                 <div className="prog-card-head">
                   <div className="prog-name">{year.year}</div>
-                  <button 
-                    className={`ay-status-badge ${year.status.toLowerCase()}`}
-                    onClick={() => toggleYearStatus(year.year)}
+                  <span 
+                    className={`ay-status-badge ${String(year.status || '').toLowerCase()}`}
+                    title={`Status: ${year.status}`}
+                    style={{ cursor: 'default' }}
                   >
-                    {year.status === 'Active' ? (
-                      <>
-                        <span className="status-icon">●</span>
-                        Active
-                      </>
-                    ) : (
-                      <>
-                        <span className="status-icon">✓</span>
-                        Completed
-                      </>
-                    )}
-                  </button>
+                    {String(year.status).toLowerCase() === 'active' && (<><span className="status-icon">●</span>Active</>)}
+                    {String(year.status).toLowerCase() === 'completed' && (<><span className="status-icon">✓</span>Completed</>)}
+                    {String(year.status).toLowerCase() === 'inactive' && (<><span className="status-icon">–</span>Inactive</>)}
+                    {String(year.status).toLowerCase() === 'archived' && (<><span className="status-icon">▣</span>Archived</>)}
+                  </span>
                 </div>
                 <div className="prog-meta">
                   {year.students} students enrolled · {year.courses.length} courses offered

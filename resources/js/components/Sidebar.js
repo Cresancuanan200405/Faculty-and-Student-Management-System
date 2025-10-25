@@ -49,6 +49,17 @@ const Sidebar = ({ onLogout }) => {
     };
 
     fetchUser();
+    // Listen for profile image updates so avatar changes without a full refresh
+    const onProfileImg = (e) => {
+      const nextUrl = (e?.detail?.url || localStorage.getItem('profile_image_url') || '').trim();
+      if (nextUrl) {
+        setUser(prev => ({ ...(prev || {}), profile_image_url: nextUrl }));
+      }
+    };
+    window.addEventListener('profileImageUpdated', onProfileImg);
+    return () => {
+      window.removeEventListener('profileImageUpdated', onProfileImg);
+    };
   }, []);
   const handleLogout = () => {
     setShowLogoutConfirm(true);

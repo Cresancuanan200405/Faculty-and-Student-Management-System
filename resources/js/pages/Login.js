@@ -94,7 +94,7 @@ function Login({ onLogin }) {
                   checked={remember}
                   onChange={e => setRemember(e.target.checked)}
                 />
-                <span className="auth-checkmark">✔</span> Remember
+                Remember
               </label>
               <span className="auth-forgot"><Link to="#">Forgot Password?</Link></span>
             </div>

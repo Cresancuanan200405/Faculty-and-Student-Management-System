@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
+import notifications from '../utils/notifications';
 
 export default function Profile() {
 	const [loading, setLoading] = useState(true);
@@ -113,9 +114,27 @@ export default function Profile() {
 				},
 			});
 			setUser(data.user);
-			alert('Profile updated successfully!');
+			// Broadcast profile image update so sidebar and other UI can refresh without a full reload
+			try {
+				const serverUrl = (data?.user?.profile_image_url || '').trim();
+				const localPreview = (imagePreview || '').trim();
+				let nextUrl = serverUrl || localPreview;
+				if (nextUrl) {
+					// Cache-bust to ensure <img> reloads even if URL is the same
+					nextUrl = nextUrl.includes('?') ? `${nextUrl}&t=${Date.now()}` : `${nextUrl}?t=${Date.now()}`;
+					try { localStorage.setItem('profile_image_url', nextUrl); } catch (_) {}
+					window.dispatchEvent(new CustomEvent('profileImageUpdated', {
+						detail: { url: nextUrl, user: data.user },
+						bubbles: true
+					}));
+					// Update current preview too
+					setImagePreview(nextUrl);
+				}
+			} catch (_) {}
+			notifications.edit('Profile updated successfully!');
 		} catch (err) {
-			alert('Failed to update profile: ' + (err.response?.data?.message || err.message));
+			const msg = (err.response?.data?.message || err.message || 'Failed to update profile');
+			notifications.info(`Error updating profile: ${msg}`);
 		} finally {
 			setSaving(false);
 		}
