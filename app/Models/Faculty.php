@@ -23,5 +23,17 @@ class Faculty extends Model
         'dean_department',
         'academic_year',
         'status',
+        'photo_path',
     ];
+
+    protected $appends = [
+        'photo_url',
+    ];
+
+    public function getPhotoUrlAttribute(): ?string
+    {
+        return $this->photo_path
+            ? asset('storage/' . ltrim($this->photo_path, '/'))
+            : null;
+    }
 }

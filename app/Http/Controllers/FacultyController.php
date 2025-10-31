@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Faculty;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Storage;
 
 class FacultyController extends Controller
 {
@@ -29,6 +30,7 @@ class FacultyController extends Controller
             'dean_department' => 'nullable|string',
             'academic_year' => 'nullable|string',
             'status' => 'nullable|string',
+            'photo' => 'nullable|image|max:2048',
         ];
 
         $validator = Validator::make($request->all(), $rules);
@@ -36,9 +38,16 @@ class FacultyController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $faculty = Faculty::create($request->only(array_keys($rules)));
+        $validated = $validator->validated();
 
-        return response()->json(['faculty' => $faculty], 201);
+        if (isset($validated['photo'])) {
+            $validated['photo_path'] = $validated['photo']->store('photos/faculties', 'public');
+            unset($validated['photo']);
+        }
+
+        $faculty = Faculty::create($validated);
+
+        return response()->json(['faculty' => $faculty->fresh()], 201);
     }
 
     public function update(Request $request, $id)
@@ -58,6 +67,8 @@ class FacultyController extends Controller
             'dean_department' => 'nullable|string',
             'academic_year' => 'nullable|string',
             'status' => 'nullable|string',
+            'photo' => 'nullable|image|max:2048',
+            'remove_photo' => 'nullable|boolean',
         ];
 
         $validator = Validator::make($request->all(), $rules);
@@ -65,9 +76,27 @@ class FacultyController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $faculty->update($request->only(array_keys($rules)));
+        $validated = $validator->validated();
+        $removePhoto = $request->boolean('remove_photo');
 
-        return response()->json(['message' => 'Updated']);
+        if ($removePhoto && $faculty->photo_path) {
+            Storage::disk('public')->delete($faculty->photo_path);
+            $validated['photo_path'] = null;
+        }
+
+        if (isset($validated['photo'])) {
+            if ($faculty->photo_path) {
+                Storage::disk('public')->delete($faculty->photo_path);
+            }
+            $validated['photo_path'] = $validated['photo']->store('photos/faculties', 'public');
+            unset($validated['photo']);
+        }
+
+        unset($validated['remove_photo']);
+
+        $faculty->update($validated);
+
+        return response()->json(['faculty' => $faculty->fresh()]);
     }
 
     public function destroy($id)

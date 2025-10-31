@@ -118,6 +118,11 @@ const Students = () => {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteInProgress, setDeleteInProgress] = useState(false);
   const [deleteTargets, setDeleteTargets] = useState([]); // array of student objects
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [editPhotoFile, setEditPhotoFile] = useState(null);
+  const [editPhotoPreview, setEditPhotoPreview] = useState(null);
+  const [removeEditPhoto, setRemoveEditPhoto] = useState(false);
 
   // Academic Year statuses from Settings (Active, Inactive, Completed, Archived)
   const [ayStatuses, setAyStatuses] = useState(() => {
@@ -243,6 +248,64 @@ const Students = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
+  const clearAddPhoto = () => {
+    setPhotoFile(null);
+    setPhotoPreview(null);
+  };
+
+  const handlePhotoChange = (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) {
+      clearAddPhoto();
+      return;
+    }
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setPhotoPreview(reader.result);
+    reader.readAsDataURL(file);
+    event.target.value = "";
+  };
+
+  const clearEditPhoto = () => {
+    setEditPhotoFile(null);
+    setEditPhotoPreview(null);
+    setRemoveEditPhoto(true);
+  };
+
+  const handleEditPhotoChange = (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) {
+      event.target.value = "";
+      return;
+    }
+    setEditPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setEditPhotoPreview(reader.result);
+    reader.readAsDataURL(file);
+    event.target.value = "";
+    setRemoveEditPhoto(false);
+  };
+
+  const openAddStudentModal = () => {
+    setForm({ ...initialState });
+    setError("");
+    setMessage("");
+    clearAddPhoto();
+    setShowModal(true);
+  };
+
+  const closeAddStudentModal = () => {
+    setShowModal(false);
+    clearAddPhoto();
+  };
+
+  const closeEditStudentModal = () => {
+    setEditModal(false);
+    setEditPhotoFile(null);
+    setEditPhotoPreview(null);
+    setRemoveEditPhoto(false);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -323,7 +386,21 @@ const Students = () => {
     }
     setLoading(true);
     try {
-      const res = await axios.post("/api/students", submitData);
+      const formData = new FormData();
+      Object.entries(submitData).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          formData.append(key, value);
+        }
+      });
+      if (photoFile) {
+        formData.append('photo', photoFile);
+      }
+
+      const res = await axios.post("/api/students", formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
       const depRes = await axios.get("/api/departments");
       setDepartmentsData(depRes.data.departments || []);
 
@@ -342,9 +419,19 @@ const Students = () => {
         detail: newStudent,
         bubbles: true
       }));
+      // Auto-navigate the UI to the student's destination folder
+      try {
+        const yearLabel = normalizeYearLabel(form.academic_year);
+        setSelectedYear(yearLabel || null);
+        setSelectedDept(form.department || null);
+        const programName = newStudent.program || form.program || null;
+        setSelectedSubDept(programName);
+        setSelectedCourse(programName);
+        setShowArchived(false);
+      } catch (_) {}
       
-      setShowModal(false);
-      setForm(initialState);
+  closeAddStudentModal();
+  setForm({ ...initialState });
       
     } catch (err) {
       if (err.response?.data?.errors) {
@@ -392,6 +479,9 @@ const Students = () => {
       program: program || "",
     });
     setEditId(filledStudent.id);
+    setEditPhotoFile(null);
+    setEditPhotoPreview(filledStudent.photo_url || filledStudent.avatar || null);
+    setRemoveEditPhoto(false);
     setEditModal(true);
   };
 
@@ -400,15 +490,40 @@ const Students = () => {
     setEditLoading(true);
     setError("");
     try {
-      await axios.put(`/api/students/${editId}`, editForm);
+      const payload = { ...editForm };
+      if (payload.academic_year && payload.academic_year.startsWith("SY ")) {
+        payload.academic_year = payload.academic_year.replace(/^SY\s*/, "");
+      }
+
+      const formData = new FormData();
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          formData.append(key, value);
+        }
+      });
+      if (editPhotoFile) {
+        formData.append('photo', editPhotoFile);
+      }
+      if (removeEditPhoto && !editPhotoFile) {
+        formData.append('remove_photo', '1');
+      }
+      formData.append('_method', 'PUT');
+
+      await axios.post(`/api/students/${editId}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
       const refreshed = await axios.get("/api/students");
-      setStudents(refreshed.data.students || []);
-      setEditModal(false);
+      const allStudents = refreshed.data.students || [];
+      setStudents(allStudents);
+      const updatedStudent = allStudents.find((stu) => stu.id === editId);
+      closeEditStudentModal();
       
       notifications.edit(`Student ${editForm.first_name} ${editForm.last_name} updated successfully!`);
 
       window.dispatchEvent(new CustomEvent('studentUpdated', {
-        detail: { ...editForm, id: editId },
+        detail: updatedStudent || { ...editForm, id: editId },
         bubbles: true
       }));
       
@@ -1065,7 +1180,7 @@ const Students = () => {
            </button>
            <button
              className="students-banner-add"
-             onClick={() => setShowModal(true)}
+             onClick={openAddStudentModal}
            >
              + Add Student
            </button>
@@ -1679,7 +1794,7 @@ const Students = () => {
                       )}
                       <div className="students-list-student">
                         <img
-                          src={stu.avatar || "/avatar1.png"}
+                          src={stu.photo_url || stu.avatar || "/avatar1.png"}
                           alt={stu.first_name + " " + stu.last_name}
                           className="students-list-avatar"
                         />
@@ -1782,7 +1897,7 @@ const Students = () => {
                     )}
                     <div className="students-list-student">
                       <img
-                        src={stu.avatar || "/avatar1.png"}
+                        src={stu.photo_url || stu.avatar || "/avatar1.png"}
                         alt={stu.first_name + " " + stu.last_name}
                         className="students-list-avatar"
                       />
@@ -1941,8 +2056,8 @@ const Students = () => {
                       </div>
                     )}
                     <div className="students-list-student">
-                      <img
-                        src={stu.avatar || "/avatar1.png"}
+                        <img
+                        src={stu.photo_url || stu.avatar || "/avatar1.png"}
                         alt={stu.first_name + " " + stu.last_name}
                         className="students-list-avatar"
                       />
@@ -2052,7 +2167,7 @@ const Students = () => {
       </div>
 
       {showModal && (
-        <div className="students-modal-bg" onClick={() => setShowModal(false)}>
+        <div className="students-modal-bg" onClick={closeAddStudentModal}>
           <div
             className="students-modal"
             style={{
@@ -2076,6 +2191,31 @@ const Students = () => {
                 alignItems: "center",
               }}
             >
+              <div className="students-modal-row" style={{ gridColumn: "1 / span 2" }}>
+                <label>Profile Photo</label>
+                <div className="students-avatar-upload">
+                  <div className="students-avatar-preview">
+                    {photoPreview ? (
+                      <img src={photoPreview} alt="Selected student preview" />
+                    ) : (
+                      <span className="students-avatar-placeholder">No image selected</span>
+                    )}
+                  </div>
+                  <div className="students-avatar-actions">
+                    <input type="file" accept="image/*" onChange={handlePhotoChange} />
+                    {photoPreview && (
+                      <button
+                        type="button"
+                        className="students-avatar-clear"
+                        onClick={clearAddPhoto}
+                      >
+                        Remove Photo
+                      </button>
+                    )}
+                    <p className="students-avatar-hint">PNG or JPG up to 2MB.</p>
+                  </div>
+                </div>
+              </div>
               <div className="students-modal-row">
                 <label>
                   School Year <span style={{ color: "#e11d48" }}>*</span>
@@ -2274,7 +2414,7 @@ const Students = () => {
                 <button
                   type="button"
                   className="students-modal-cancel"
-                  onClick={() => setShowModal(false)}
+                  onClick={closeAddStudentModal}
                 >
                   Cancel
                 </button>
@@ -2307,7 +2447,7 @@ const Students = () => {
       )}
 
       {editModal && (
-        <div className="students-modal-bg" onClick={() => setEditModal(false)}>
+        <div className="students-modal-bg" onClick={closeEditStudentModal}>
           <div
             className="students-modal"
             style={{
@@ -2333,6 +2473,37 @@ const Students = () => {
                 alignItems: "center",
               }}
             >
+              <div className="students-modal-row" style={{ gridColumn: "1 / span 2" }}>
+                <label>Profile Photo</label>
+                <div className="students-avatar-upload">
+                  <div className="students-avatar-preview">
+                    {editPhotoPreview ? (
+                      <img src={editPhotoPreview} alt="Selected student preview" />
+                    ) : (
+                      <span className="students-avatar-placeholder">No image selected</span>
+                    )}
+                  </div>
+                  <div className="students-avatar-actions">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleEditPhotoChange}
+                      disabled={editLoading}
+                    />
+                    {editPhotoPreview && (
+                      <button
+                        type="button"
+                        className="students-avatar-clear"
+                        onClick={clearEditPhoto}
+                        disabled={editLoading}
+                      >
+                        Remove Photo
+                      </button>
+                    )}
+                    <p className="students-avatar-hint">PNG or JPG up to 2MB.</p>
+                  </div>
+                </div>
+              </div>
               {Object.entries(initialState).map(([key, _]) => (
                 <div className="students-modal-row" key={key} style={{ width: "100%" }}>
                   <label style={{ fontWeight: 500 }}>
@@ -2442,7 +2613,7 @@ const Students = () => {
                 <button
                   type="button"
                   className="students-modal-cancel"
-                  onClick={() => setEditModal(false)}
+                  onClick={closeEditStudentModal}
                   disabled={editLoading}
                 >
                   Cancel

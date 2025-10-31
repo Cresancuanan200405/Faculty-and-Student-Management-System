@@ -140,6 +140,32 @@ class AuthController extends Controller
         return response()->json(['message' => 'Logged out']);
     }
 
+    public function changePassword(Request $request)
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+        ]);
+
+        // Validate current password
+        if (!Hash::check($data['current_password'], $user->password)) {
+            return response()->json(['message' => 'Current password is incorrect'], 422);
+        }
+
+        // Avoid reusing the same password (optional but recommended)
+        if (Hash::check($data['password'], $user->password)) {
+            return response()->json(['message' => 'New password must be different from the current password'], 422);
+        }
+
+        $user->password = Hash::make($data['password']);
+        $user->save();
+
+        return response()->json(['message' => 'Password updated successfully']);
+    }
+
     private function generateEmployeeId(): string
     {
         $year = now()->year;

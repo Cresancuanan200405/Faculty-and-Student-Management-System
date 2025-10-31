@@ -48,6 +48,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/profile', [AuthController::class, 'updateProfile']);
     Route::post('/logout', [AuthController::class, 'logout']);
+    // Change password
+    Route::post('/change-password', [AuthController::class, 'changePassword']);
 });
 
 // Update student

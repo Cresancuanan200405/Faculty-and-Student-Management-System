@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Student;
+use Illuminate\Support\Facades\Storage;
 
 class StudentController extends Controller
 {
@@ -29,10 +30,16 @@ class StudentController extends Controller
             'program' => 'nullable|string',
             'birthdate' => 'nullable|date',
             'phone' => 'nullable|string',
+            'photo' => 'nullable|image|max:2048',
         ]);
 
+        if (isset($validated['photo'])) {
+            $validated['photo_path'] = $validated['photo']->store('photos/students', 'public');
+            unset($validated['photo']);
+        }
+
         $student = Student::create($validated);
-        return response()->json(['student' => $student], 201);
+        return response()->json(['student' => $student->fresh()], 201);
     }
 
     // Update a student
@@ -50,10 +57,29 @@ class StudentController extends Controller
             'program' => 'nullable|string',
             'birthdate' => 'nullable|date',
             'phone' => 'nullable|string',
+            'photo' => 'nullable|image|max:2048',
+            'remove_photo' => 'nullable|boolean',
         ]);
 
+        $removePhoto = $request->boolean('remove_photo');
+
+        if ($removePhoto && $student->photo_path) {
+            Storage::disk('public')->delete($student->photo_path);
+            $validated['photo_path'] = null;
+        }
+
+        if (isset($validated['photo'])) {
+            if ($student->photo_path) {
+                Storage::disk('public')->delete($student->photo_path);
+            }
+            $validated['photo_path'] = $validated['photo']->store('photos/students', 'public');
+            unset($validated['photo']);
+        }
+
+        unset($validated['remove_photo']);
+
         $student->update($validated);
-        return response()->json(['student' => $student]);
+        return response()->json(['student' => $student->fresh()]);
     }
 
     // Delete a student

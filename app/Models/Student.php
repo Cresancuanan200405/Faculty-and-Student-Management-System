@@ -21,5 +21,17 @@ class Student extends Model
         'academic_year',
         'status',
         'program',
+        'photo_path',
     ];
+
+    protected $appends = [
+        'photo_url',
+    ];
+
+    public function getPhotoUrlAttribute(): ?string
+    {
+        return $this->photo_path
+            ? asset('storage/' . ltrim($this->photo_path, '/'))
+            : null;
+    }
 }

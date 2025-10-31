@@ -20,6 +20,38 @@ export default function Profile() {
 		email: '',
 		address: '',
 	});
+	const [theme, setTheme] = useState(() => {
+		if (typeof window === 'undefined') return 'light';
+		try {
+			return localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+		} catch (_) {
+			return 'light';
+		}
+	});
+
+	// Helper: normalize any incoming date value to YYYY-MM-DD (for input type="date")
+	const normalizeDateInput = (value) => {
+		if (!value) return '';
+		const s = String(value).trim();
+		const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+		if (m) return m[1];
+		const d = new Date(s);
+		if (!isNaN(d.getTime())) {
+			const y = d.getFullYear();
+			const mo = String(d.getMonth() + 1).padStart(2, '0');
+			const da = String(d.getDate()).padStart(2, '0');
+			return `${y}-${mo}-${da}`;
+		}
+		return '';
+	};
+
+	// Change Password state
+	const [passwordForm, setPasswordForm] = useState({
+		current_password: '',
+		new_password: '',
+		confirm_password: '',
+	});
+	const [passwordSaving, setPasswordSaving] = useState(false);
 
 	const nationalities = [
 		'Filipino', 'American', 'Japanese', 'Korean', 'Chinese', 'British', 'Canadian', 'Australian',
@@ -40,16 +72,30 @@ export default function Profile() {
 		axios.get('/api/me')
 			.then(({ data }) => {
 				setUser(data);
-				setForm({
+				const apiForm = {
 					name: data.name || '',
 					gender: data.gender || '',
-					birth_date: data.birth_date || '',
+					birth_date: normalizeDateInput(data.birth_date),
 					nationality: data.nationality || '',
 					civil_status: data.civil_status || '',
 					phone: data.phone || '',
 					email: data.email || '',
 					address: data.address || '',
-				});
+				};
+				// Try restore draft from localStorage (prevents reset when navigating away)
+				let restored = null;
+				try {
+					const raw = localStorage.getItem(`profile_form_draft_${data.id}`);
+					if (raw) restored = JSON.parse(raw);
+				} catch (_) {}
+				if (restored) {
+					if (Object.prototype.hasOwnProperty.call(restored, 'birth_date')) {
+						restored.birth_date = normalizeDateInput(restored.birth_date);
+					}
+					setForm({ ...apiForm, ...restored });
+				} else {
+					setForm(apiForm);
+				}
 				// Set profile image if exists
 				if (data.profile_image_url) {
 					setImagePreview(data.profile_image_url);
@@ -59,9 +105,28 @@ export default function Profile() {
 			.finally(() => setLoading(false));
 	}, []);
 
+	useEffect(() => {
+		if (typeof document === 'undefined') return;
+		document.body.classList.toggle('theme-dark', theme === 'dark');
+		try {
+			localStorage.setItem('theme', theme);
+		} catch (_) {}
+		try {
+			window.dispatchEvent(new CustomEvent('themeChanged', { detail: { mode: theme } }));
+		} catch (_) {}
+	}, [theme]);
+
+	// Persist profile form draft so navigating away doesn't lose values (esp. birth_date)
+	useEffect(() => {
+		if (!user) return;
+		try {
+			localStorage.setItem(`profile_form_draft_${user.id}`, JSON.stringify(form));
+		} catch (_) {}
+	}, [form, user]);
+
 	const handleChange = (e) => {
 		const { name, value } = e.target;
-		setForm((f) => ({ ...f, [name]: value }));
+		setForm((f) => ({ ...f, [name]: name === 'birth_date' ? normalizeDateInput(value) : value }));
 	};
 
 	const handleImageChange = (e) => {
@@ -74,6 +139,10 @@ export default function Profile() {
 			};
 			reader.readAsDataURL(file);
 		}
+	};
+
+	const handleThemeChange = (mode) => {
+		setTheme((current) => (current === mode ? current : mode));
 	};
 
 	const triggerFileInput = () => {
@@ -114,6 +183,11 @@ export default function Profile() {
 				},
 			});
 			setUser(data.user);
+			// Clear draft after successful save
+			try {
+				const uid = data?.user?.id || user?.id;
+				if (uid) localStorage.removeItem(`profile_form_draft_${uid}`);
+			} catch (_) {}
 			// Broadcast profile image update so sidebar and other UI can refresh without a full reload
 			try {
 				const serverUrl = (data?.user?.profile_image_url || '').trim();
@@ -137,6 +211,45 @@ export default function Profile() {
 			notifications.info(`Error updating profile: ${msg}`);
 		} finally {
 			setSaving(false);
+		}
+	};
+
+	// Password handlers
+	const handlePasswordChange = (e) => {
+		const { name, value } = e.target;
+		setPasswordForm((p) => ({ ...p, [name]: value }));
+	};
+
+
+	const handlePasswordSave = async (e) => {
+		e.preventDefault();
+		const { current_password, new_password, confirm_password } = passwordForm;
+		if (!current_password || !new_password || !confirm_password) {
+			notifications.info('Please fill in all password fields.');
+			return;
+		}
+		if (new_password.length < 8) {
+			notifications.info('New password must be at least 8 characters.');
+			return;
+		}
+		if (new_password !== confirm_password) {
+			notifications.info('New password and confirmation do not match.');
+			return;
+		}
+		setPasswordSaving(true);
+		try {
+			await axios.post('/api/change-password', {
+				current_password,
+				password: new_password,
+				password_confirmation: confirm_password,
+			});
+			setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
+			notifications.edit('Password updated successfully.');
+		} catch (err) {
+			const msg = (err.response?.data?.message || err.message || 'Failed to update password');
+			notifications.info(`Error updating password: ${msg}`);
+		} finally {
+			setPasswordSaving(false);
 		}
 	};
 
@@ -183,6 +296,41 @@ export default function Profile() {
 						<p>Update your personal information and profile picture</p>
 					</div>
 				</div>
+
+				<section className="profile-theme-toggle" role="group" aria-label="Display theme selection">
+					<div className="profile-theme-copy">
+						<h3>Display Mode</h3>
+						<p>Switch between light and dark UI themes for your account.</p>
+					</div>
+					<div className="profile-theme-actions">
+						<button
+							type="button"
+							className={`theme-toggle-btn ${theme === 'light' ? 'active' : ''}`}
+							onClick={() => handleThemeChange('light')}
+							aria-pressed={theme === 'light'}
+						>
+							<span className="theme-toggle-icon" aria-hidden="true">
+								<svg viewBox="0 0 24 24" fill="none">
+									<path d="M12 5.5a6.5 6.5 0 1 0 6.5 6.5A6.51 6.51 0 0 0 12 5.5zm0-3.5a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1zm0 16a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1zm9-7a1 1 0 0 1-1 1h-2a1 1 0 1 1 0-2h2a1 1 0 0 1 1 1zm-16 0a1 1 0 0 1-1 1H2a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1zm13.07-6.07a1 1 0 0 1 0 1.41l-1.42 1.42a1 1 0 0 1-1.41-1.41l1.41-1.42a1 1 0 0 1 1.42 0zM7.76 16.24a1 1 0 0 1 0 1.42l-1.42 1.41a1 1 0 0 1-1.41-1.41l1.41-1.42a1 1 0 0 1 1.42 0zm0-10.48-1.42-1.41A1 1 0 0 1 7.76 2.93l1.42 1.41a1 1 0 1 1-1.42 1.42zm8.48 8.48 1.42 1.42a1 1 0 0 1-1.41 1.41l-1.42-1.41a1 1 0 1 1 1.41-1.42z" fill="currentColor"/>
+								</svg>
+							</span>
+							<span className="theme-toggle-label">Dark Mode Off</span>
+						</button>
+						<button
+							type="button"
+							className={`theme-toggle-btn ${theme === 'dark' ? 'active' : ''}`}
+							onClick={() => handleThemeChange('dark')}
+							aria-pressed={theme === 'dark'}
+						>
+							<span className="theme-toggle-icon" aria-hidden="true">
+								<svg viewBox="0 0 24 24" fill="none">
+									<path d="M21 12.79A9 9 0 0 1 11.21 3 7 7 0 1 0 21 12.79z" fill="currentColor"/>
+								</svg>
+							</span>
+							<span className="theme-toggle-label">Dark Mode On</span>
+						</button>
+					</div>
+				</section>
 
 				<form onSubmit={handleSave} className="profile-form">
 					<div className="profile-columns">
@@ -260,6 +408,63 @@ export default function Profile() {
 						</button>
 					</div>
 				</form>
+
+				{/* Change Password Section */}
+				<div className="profile-change-password">
+					<h3>Change Password</h3>
+					<form onSubmit={handlePasswordSave} className="profile-form">
+						<div className="profile-columns">
+							<div className="profile-col">
+								<label>
+									Current Password
+									<div className="password-input">
+										<input
+											name="current_password"
+											type="password"
+											autoComplete="current-password"
+											value={passwordForm.current_password}
+											onChange={handlePasswordChange}
+											required
+										/>
+									</div>
+								</label>
+								<label>
+									New Password
+									<div className="password-input">
+										<input
+											name="new_password"
+											type="password"
+											autoComplete="new-password"
+											minLength={8}
+											value={passwordForm.new_password}
+											onChange={handlePasswordChange}
+											required
+										/>
+									</div>
+								</label>
+								<label>
+									Confirm New Password
+									<div className="password-input">
+										<input
+											name="confirm_password"
+											type="password"
+											autoComplete="new-password"
+											minLength={8}
+											value={passwordForm.confirm_password}
+											onChange={handlePasswordChange}
+											required
+										/>
+									</div>
+								</label>
+							</div>
+						</div>
+						<div className="profile-actions">
+							<button type="submit" disabled={passwordSaving}>
+								{passwordSaving ? 'Updating Password…' : 'Update Password'}
+							</button>
+						</div>
+					</form>
+				</div>
 			</div>
 
 			{/* Image Modal */}
