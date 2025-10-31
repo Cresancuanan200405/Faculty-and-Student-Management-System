@@ -129,6 +129,58 @@ const Students = () => {
     try { return JSON.parse(localStorage.getItem('settings_academic_year_statuses') || '{}'); } catch { return {}; }
   });
 
+  const SY_STATUS_KEY = 'settings_academic_year_statuses';
+  const SY_STATUS_PREV_KEY = 'settings_academic_year_statuses_prev';
+
+  const setGlobalAcademicYearStatus = useCallback((labelOrYear, nextStatus, source = 'Students') => {
+    const raw = labelOrYear ?? '';
+    const year = String(raw).replace(/^SY\s*/i, '').trim();
+    if (!year) return;
+
+    const normalizedStatus = String(nextStatus || 'Active');
+
+    let statusMap = {};
+    let prevStatusMap = {};
+    try { statusMap = JSON.parse(localStorage.getItem(SY_STATUS_KEY) || '{}'); } catch (_) {}
+    try { prevStatusMap = JSON.parse(localStorage.getItem(SY_STATUS_PREV_KEY) || '{}'); } catch (_) {}
+
+    if (normalizedStatus.toLowerCase() === 'archived') {
+      const existing = statusMap[year];
+      if (existing && existing.toLowerCase() !== 'archived') {
+        prevStatusMap[year] = existing;
+      } else if (!prevStatusMap[year]) {
+        prevStatusMap[year] = 'Active';
+      }
+      statusMap[year] = 'Archived';
+    } else {
+      statusMap[year] = normalizedStatus;
+      if (prevStatusMap[year]) {
+        delete prevStatusMap[year];
+      }
+    }
+
+    try {
+      localStorage.setItem(SY_STATUS_KEY, JSON.stringify(statusMap));
+      localStorage.setItem(SY_STATUS_PREV_KEY, JSON.stringify(prevStatusMap));
+    } catch (_) {}
+
+    window.dispatchEvent(new CustomEvent('academicYearStatusUpdated', {
+      detail: { year, status: statusMap[year], source },
+      bubbles: true
+    }));
+  }, []);
+
+  const restoreGlobalAcademicYearStatus = useCallback((labelOrYear, source = 'Students') => {
+    const raw = labelOrYear ?? '';
+    const year = String(raw).replace(/^SY\s*/i, '').trim();
+    if (!year) return;
+
+    let prevStatusMap = {};
+    try { prevStatusMap = JSON.parse(localStorage.getItem(SY_STATUS_PREV_KEY) || '{}'); } catch (_) {}
+    const fallback = String(prevStatusMap[year] || 'Active');
+    setGlobalAcademicYearStatus(year, fallback, source);
+  }, [setGlobalAcademicYearStatus]);
+
   const getYearKey = useCallback((labelOrValue) => {
     if (!labelOrValue) return '';
     return String(labelOrValue).replace(/^SY\s*/i, '').trim();
@@ -611,6 +663,7 @@ const Students = () => {
     const label = archiveTargetYear;
     try {
       archiveYear(label);
+      setGlobalAcademicYearStatus(label, 'Archived', 'Students');
       window.dispatchEvent(new CustomEvent('studentYearArchived', {
         detail: { label },
         bubbles: true
@@ -635,6 +688,7 @@ const Students = () => {
     const label = restoreTargetYear;
     try {
       setArchivedYears((prev) => prev.filter((y) => y !== label));
+      restoreGlobalAcademicYearStatus(label, 'Students');
       notifications.edit(`School Year folder ${label} has been restored from the archives!`);
       window.dispatchEvent(new CustomEvent('studentYearRestored', {
         detail: { label },
@@ -1154,24 +1208,6 @@ const Students = () => {
           </div>
         </div>
         <div className="students-banner-actions" style={{ marginLeft: "auto" }}>
-           <button
-             className="students-banner-add"
-             style={{
-               background: "linear-gradient(90deg,#6366f1,#7c3aed)",
-               color: "#fff",
-               border: "none",
-               borderRadius: 20,
-               padding: "8px 28px",
-               fontWeight: 600,
-               marginRight: 16,
-               fontSize: "1rem",
-               boxShadow: "0 2px 8px #0001",
-               transition: "box-shadow 0.2s",
-             }}
-             onClick={() => setShowAddYearModal(true)}
-           >
-             + Add SY Folder
-           </button>
            <button
              className="students-banner-archived"
              onClick={() => setShowArchived(!showArchived)}

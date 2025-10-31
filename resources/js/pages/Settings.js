@@ -57,7 +57,7 @@ const Settings = () => {
 	const [academicYearForm, setAcademicYearForm] = useState({
 		academic_year: '',
 		status: 'Active',
-		target: 'Students'
+		targets: ['Students']
 	});
 
 	// UI State
@@ -70,12 +70,30 @@ const Settings = () => {
 	const [searchTerm, setSearchTerm] = useState('');
 	const [debouncedTerm, setDebouncedTerm] = useState('');
 	const [showArchived, setShowArchived] = useState(false);
+	const [courseSelectionMode, setCourseSelectionMode] = useState(false);
+	const [selectedCourseIds, setSelectedCourseIds] = useState(() => new Set());
+	const [departmentSelectionMode, setDepartmentSelectionMode] = useState(false);
+	const [selectedDepartmentIds, setSelectedDepartmentIds] = useState(() => new Set());
+	const [yearSelectionMode, setYearSelectionMode] = useState(false);
+	const [selectedYearIds, setSelectedYearIds] = useState(() => new Set());
+	const [bulkConfirm, setBulkConfirm] = useState({ show: false, subject: '', action: '', ids: [] });
+	const [bulkConfirmText, setBulkConfirmText] = useState('');
+	const [bulkConfirmInProgress, setBulkConfirmInProgress] = useState(false);
 
 	// Debounce search input
 	useEffect(() => {
 		const t = setTimeout(() => setDebouncedTerm(searchTerm), 300);
 		return () => clearTimeout(t);
 	}, [searchTerm]);
+
+	useEffect(() => {
+		setSelectedCourseIds(new Set());
+		setSelectedDepartmentIds(new Set());
+		setSelectedYearIds(new Set());
+		setCourseSelectionMode(false);
+		setDepartmentSelectionMode(false);
+		setYearSelectionMode(false);
+	}, [activeTab, showArchived]);
 
 	// Optional loader (guarded) — if /api/courses, /api/departments, /api/academic-years exist, they will populate; otherwise placeholders stay
 	const loadCourses = useCallback(async () => {
@@ -232,6 +250,121 @@ const Settings = () => {
 		};
 		window.addEventListener('academicYearAdded', onAcademicYearAdded);
 		return () => window.removeEventListener('academicYearAdded', onAcademicYearAdded);
+	}, [setAcademicYears]);
+
+	// Keep Academic Year statuses in sync when Students/Faculty archive or restore SY folders
+	useEffect(() => {
+		const STATUS_KEY = 'settings_academic_year_statuses';
+		const PREV_STATUS_KEY = 'settings_academic_year_statuses_prev';
+
+		const persistStatus = (year, status, source) => {
+			if (!year) return;
+			let map = {};
+			let prevMap = {};
+			try { map = JSON.parse(localStorage.getItem(STATUS_KEY) || '{}'); } catch (_) {}
+			try { prevMap = JSON.parse(localStorage.getItem(PREV_STATUS_KEY) || '{}'); } catch (_) {}
+
+			if (status === 'Archived') {
+				const current = map[year];
+				if (current && current !== 'Archived') {
+					prevMap[year] = current;
+				} else if (!prevMap[year]) {
+					prevMap[year] = 'Active';
+				}
+			} else if (prevMap[year]) {
+				delete prevMap[year];
+			}
+
+			map[year] = status;
+			try {
+				localStorage.setItem(STATUS_KEY, JSON.stringify(map));
+				localStorage.setItem(PREV_STATUS_KEY, JSON.stringify(prevMap));
+			} catch (_) {}
+
+			window.dispatchEvent(new CustomEvent('academicYearStatusUpdated', {
+				detail: { year, status },
+				bubbles: true
+			}));
+
+			setAcademicYears(prev => {
+				const list = Array.isArray(prev) ? prev.slice() : [];
+				let found = false;
+				let maxId = 0;
+				list.forEach(item => {
+					const idNum = Number(item?.id);
+					if (!Number.isNaN(idNum)) {
+						maxId = Math.max(maxId, idNum);
+					}
+				});
+
+				const next = list.map(item => {
+					if (String(item.academic_year) !== year) return item;
+					found = true;
+					return {
+						...item,
+						status,
+						hasStudents: item.hasStudents || source === 'Students',
+						hasFaculty: item.hasFaculty || source === 'Faculty'
+					};
+				});
+
+				if (!found) {
+					next.push({
+						id: maxId + 1 || 1,
+						academic_year: year,
+						status,
+						hasStudents: source === 'Students',
+						hasFaculty: source === 'Faculty'
+					});
+				}
+
+				next.sort((a, b) => String(a.academic_year).localeCompare(String(b.academic_year)));
+				return next;
+			});
+		};
+
+		const extractYear = (detail) => {
+			const raw = detail?.label ?? detail?.year ?? detail;
+			if (!raw) return null;
+			const cleaned = String(raw).replace(/^SY\s*/i, '').trim();
+			return cleaned || null;
+		};
+
+		const handleArchive = (source) => (event) => {
+			const year = extractYear(event?.detail);
+			if (!year) return;
+			persistStatus(year, 'Archived', source);
+		};
+
+		const handleRestore = (source) => (event) => {
+			const year = extractYear(event?.detail);
+			if (!year) return;
+			let fallback = 'Active';
+			try {
+				const prevMap = JSON.parse(localStorage.getItem(PREV_STATUS_KEY) || '{}');
+				if (prevMap[year] && prevMap[year] !== 'Archived') {
+					fallback = prevMap[year];
+				}
+			} catch (_) {}
+			persistStatus(year, fallback, source);
+		};
+
+		const studentArchive = handleArchive('Students');
+		const facultyArchive = handleArchive('Faculty');
+		const studentRestore = handleRestore('Students');
+		const facultyRestore = handleRestore('Faculty');
+
+		window.addEventListener('studentYearArchived', studentArchive);
+		window.addEventListener('facultyYearArchived', facultyArchive);
+		window.addEventListener('studentYearRestored', studentRestore);
+		window.addEventListener('facultyYearRestored', facultyRestore);
+
+		return () => {
+			window.removeEventListener('studentYearArchived', studentArchive);
+			window.removeEventListener('facultyYearArchived', facultyArchive);
+			window.removeEventListener('studentYearRestored', studentRestore);
+			window.removeEventListener('facultyYearRestored', facultyRestore);
+		};
 	}, []);
 
 	// Derived options
@@ -243,6 +376,32 @@ const Settings = () => {
 	}, [courses, departments]);
 
 	const statusOptions = ['Active', 'Inactive', 'Completed'];
+
+	const getCourseRowKey = useCallback((course) => {
+		if (!course) return '';
+		if (course.id !== undefined && course.id !== null) {
+			return String(course.id);
+		}
+		const program = String(course.program || '').trim();
+		const name = String(course.name || '').trim();
+		return `${program}::${name}` || 'course::unknown';
+	}, []);
+
+	const getDepartmentRowKey = useCallback((department) => {
+		if (!department) return '';
+		if (department.id !== undefined && department.id !== null) {
+			return String(department.id);
+		}
+		return String(department.name || '').trim() || 'department::unknown';
+	}, []);
+
+	const getAcademicYearRowKey = useCallback((year) => {
+		if (!year) return '';
+		if (year.id !== undefined && year.id !== null) {
+			return String(year.id);
+		}
+		return String(year.academic_year || '').trim();
+	}, []);
 
 	// Filtering functions for each tab
 	const filteredCourses = useMemo(() => {
@@ -316,6 +475,16 @@ const Settings = () => {
 		});
 	}, [academicYears, selectedStatus, debouncedTerm, showArchived, selectedSource]);
 
+	const displayedCourseKeys = filteredCourses.map(getCourseRowKey);
+	const displayedDepartmentKeys = filteredDepartments.map(getDepartmentRowKey);
+	const displayedYearKeys = filteredAcademicYears.map(getAcademicYearRowKey);
+	const selectedCoursesCount = selectedCourseIds.size;
+	const selectedDepartmentsCount = selectedDepartmentIds.size;
+	const selectedYearsCount = selectedYearIds.size;
+	const allCoursesSelected = displayedCourseKeys.length > 0 && displayedCourseKeys.every(key => selectedCourseIds.has(key));
+	const allDepartmentsSelected = displayedDepartmentKeys.length > 0 && displayedDepartmentKeys.every(key => selectedDepartmentIds.has(key));
+	const allYearsSelected = displayedYearKeys.length > 0 && displayedYearKeys.every(key => selectedYearIds.has(key));
+
 	// Modal and form handlers
 	const openAddModal = (type) => {
 		setModalType(type);
@@ -341,7 +510,7 @@ const Settings = () => {
 			setAcademicYearForm({
 				academic_year: '',
 					status: 'Active',
-					target: 'Students'
+					targets: ['Students']
 			});
 		}
 		setShowModal(true);
@@ -367,6 +536,164 @@ const Settings = () => {
 	const handleAcademicYearFormChange = (e) => {
 		const { name, value } = e.target;
 		setAcademicYearForm(prev => ({ ...prev, [name]: value }));
+	};
+
+	const toggleAcademicYearTarget = (value) => {
+		setAcademicYearForm(prev => {
+			const current = Array.isArray(prev?.targets) ? prev.targets : [];
+			const exists = current.includes(value);
+			const nextTargets = exists ? current.filter(t => t !== value) : [...current, value];
+			return {
+				...prev,
+				targets: nextTargets.length ? nextTargets : ['Students']
+			};
+		});
+	};
+
+	const normalizeTargets = (rawTargets) => {
+		if (Array.isArray(rawTargets)) {
+			const filtered = rawTargets
+				.map(t => (typeof t === 'string' ? t.trim().toLowerCase() : ''))
+				.filter(t => t === 'students' || t === 'faculty');
+			if (!filtered.length) {
+				return ['Students'];
+			}
+			return Array.from(new Set(filtered)).map(t => (t === 'faculty' ? 'Faculty' : 'Students'));
+		}
+		if (typeof rawTargets === 'string' && rawTargets.trim()) {
+			const normalized = rawTargets.trim().toLowerCase();
+			if (normalized === 'both' || normalized === 'all') {
+				return ['Students', 'Faculty'];
+			}
+			if (normalized === 'faculty' || normalized === 'students') {
+				return [normalized === 'faculty' ? 'Faculty' : 'Students'];
+			}
+		}
+		return ['Students'];
+	};
+
+	const resetCourseSelection = () => {
+		setCourseSelectionMode(false);
+		setSelectedCourseIds(new Set());
+	};
+
+	const resetDepartmentSelection = () => {
+		setDepartmentSelectionMode(false);
+		setSelectedDepartmentIds(new Set());
+	};
+
+	const resetYearSelection = () => {
+		setYearSelectionMode(false);
+		setSelectedYearIds(new Set());
+	};
+
+	const closeBulkConfirm = () => {
+		setBulkConfirm({ show: false, subject: '', action: '', ids: [] });
+		setBulkConfirmText('');
+		setBulkConfirmInProgress(false);
+	};
+
+	const handleBulkCourseStatus = async (ids, actionType) => {
+		if (!ids?.length) return;
+		const targetStatus = actionType === 'archive' ? 'Archived' : 'Active';
+		const verb = actionType === 'archive' ? 'archived' : 'restored';
+		const courseMap = new Map((courses || []).map(course => [getCourseRowKey(course), course]));
+		const jobs = ids.map(key => {
+			const course = courseMap.get(key);
+			if (!course || !course.id) {
+				return Promise.reject(new Error('Course not found'));
+			}
+			const payload = { ...course, status: targetStatus };
+			return axios.put(`/api/courses/${course.id}`, payload);
+		});
+		const results = await Promise.allSettled(jobs);
+		const successCount = results.filter(res => res.status === 'fulfilled').length;
+		const failureCount = ids.length - successCount;
+		if (successCount) {
+			notifications.add(`Successfully ${verb} ${successCount} course${successCount === 1 ? '' : 's'}.`);
+		}
+		if (failureCount) {
+			notifications.info(`Failed to ${verb} ${failureCount} course${failureCount === 1 ? '' : 's'}.`);
+		}
+		await loadCourses();
+	};
+
+	const handleBulkDepartmentStatus = async (ids, actionType) => {
+		if (!ids?.length) return;
+		const targetStatus = actionType === 'archive' ? 'Archived' : 'Active';
+		const verb = actionType === 'archive' ? 'archived' : 'restored';
+		const departmentMap = new Map((departments || []).map(dep => [getDepartmentRowKey(dep), dep]));
+		const jobs = ids.map(key => {
+			const department = departmentMap.get(key);
+			if (!department || !department.id) {
+				return Promise.reject(new Error('Department not found'));
+			}
+			const payload = { ...department, status: targetStatus };
+			return axios.put(`/api/departments/${department.id}`, payload);
+		});
+		const results = await Promise.allSettled(jobs);
+		const successCount = results.filter(res => res.status === 'fulfilled').length;
+		const failureCount = ids.length - successCount;
+		if (successCount) {
+			notifications.add(`Successfully ${verb} ${successCount} department${successCount === 1 ? '' : 's'}.`);
+		}
+		if (failureCount) {
+			notifications.info(`Failed to ${verb} ${failureCount} department${failureCount === 1 ? '' : 's'}.`);
+		}
+		await loadDepartments();
+	};
+
+	const handleBulkAcademicYearStatus = async (ids, actionType) => {
+		if (!ids?.length) return;
+		const targetStatus = actionType === 'archive' ? 'Archived' : 'Active';
+		const verb = actionType === 'archive' ? 'archived' : 'restored';
+		const yearMap = new Map((academicYears || []).map(year => [getAcademicYearRowKey(year), year]));
+		let successCount = 0;
+		for (const key of ids) {
+			const targetYear = yearMap.get(key);
+			if (!targetYear) {
+				continue;
+			}
+			await updateAcademicYearStatus(targetYear, targetStatus, { silent: true });
+			successCount += 1;
+		}
+		if (successCount) {
+			notifications.add(`Successfully ${verb} ${successCount} academic year${successCount === 1 ? '' : 's'}.`);
+		}
+		const failureCount = ids.length - successCount;
+		if (failureCount) {
+			notifications.info(`Failed to ${verb} ${failureCount} academic year${failureCount === 1 ? '' : 's'}.`);
+		}
+	};
+
+	const openBulkAction = (subject, actionType, ids) => {
+		if (!ids?.length) return;
+		setBulkConfirm({ show: true, subject, action: actionType, ids });
+		setBulkConfirmText('');
+	};
+
+	const performBulkAction = async () => {
+		if (!bulkConfirm.show || !bulkConfirm.ids.length) return;
+		setBulkConfirmInProgress(true);
+		const { subject, action, ids } = bulkConfirm;
+		try {
+			if (subject === 'courses') {
+				await handleBulkCourseStatus(ids, action);
+				resetCourseSelection();
+			} else if (subject === 'departments') {
+				await handleBulkDepartmentStatus(ids, action);
+				resetDepartmentSelection();
+			} else if (subject === 'academic_years') {
+				await handleBulkAcademicYearStatus(ids, action);
+				resetYearSelection();
+			}
+			closeBulkConfirm();
+		} catch (err) {
+			console.error('Bulk action failed', err);
+			notifications.info('Error: Failed to complete bulk action.');
+		} finally {
+			setBulkConfirmInProgress(false);
+		}
 	};
 
 	const submitCourse = async (e) => {
@@ -450,69 +777,108 @@ const Settings = () => {
 			const raw = (academicYearForm.academic_year || '').trim();
 			if (!/^\d{4}-\d{4}$/.test(raw)) {
 				notifications.info('Error: Please enter a valid academic year (e.g., 2025-2026).');
-				setSaving(false);
 				return;
 			}
 			const label = `SY ${raw}`;
-			if (editingItem && editingItem.id) {
-				// Update existing academic year
-				setAcademicYears(prev => prev.map(year => 
-					year.id === editingItem.id 
-						? { ...year, ...academicYearForm }
-						: year
-				));
-				notifications.add(`Academic Year "${academicYearForm.academic_year}" has been updated!`);
-
-				// Persist status map for Dashboard consumption and broadcast update
+			const targets = normalizeTargets(academicYearForm.targets || academicYearForm.target);
+			const hasStudents = targets.includes('Students');
+			const hasFaculty = targets.includes('Faculty');
+			const statusPayload = academicYearForm.status;
+			const ensureCustomYear = (key) => {
 				try {
-					const mapKey = 'settings_academic_year_statuses';
-					const map = JSON.parse(localStorage.getItem(mapKey) || '{}');
-					map[academicYearForm.academic_year] = academicYearForm.status;
-					localStorage.setItem(mapKey, JSON.stringify(map));
-					window.dispatchEvent(new CustomEvent('academicYearStatusUpdated', {
-						detail: { year: academicYearForm.academic_year, status: academicYearForm.status },
-						bubbles: true
-					}));
-				} catch (_) {}
-			} else {
-				// Create new academic year
-				const newYear = {
-					id: academicYears.length + 1,
-					academic_year: academicYearForm.academic_year,
-					status: academicYearForm.status
-				};
-				
-				setAcademicYears(prev => [...prev, newYear]);
-				notifications.add(`Academic Year "${newYear.academic_year}" has been added!`);
-
-				// Persist status map for Dashboard and broadcast update
-				try {
-					const mapKey = 'settings_academic_year_statuses';
-					const map = JSON.parse(localStorage.getItem(mapKey) || '{}');
-					map[newYear.academic_year] = newYear.status;
-					localStorage.setItem(mapKey, JSON.stringify(map));
-					window.dispatchEvent(new CustomEvent('academicYearStatusUpdated', {
-						detail: { year: newYear.academic_year, status: newYear.status },
-						bubbles: true
-					}));
-				} catch (_) {}
-
-				// Propagate to target page via event and localStorage persistence
-				const target = academicYearForm.target === 'Faculty' ? 'Faculty' : 'Students';
-				try {
-					window.dispatchEvent(new CustomEvent('academicYearAdded', {
-						detail: { label, target },
-						bubbles: true
-					}));
-				} catch (_) {}
-
-				try {
-					const key = target === 'Faculty' ? 'facultyCustomYears' : 'studentsCustomYears';
 					const existing = JSON.parse(localStorage.getItem(key) || '[]');
 					if (!existing.includes(label)) {
 						localStorage.setItem(key, JSON.stringify([...existing, label]));
 					}
 				} catch (_) {}
+			};
+
+			if (editingItem && editingItem.id) {
+				const previousTargets = [
+					editingItem?.hasStudents ? 'Students' : null,
+					editingItem?.hasFaculty ? 'Faculty' : null
+				].filter(Boolean);
+
+				setAcademicYears(prev => {
+					const list = (prev || []).map(year => (
+						year.id === editingItem.id
+							? {
+								...year,
+								academic_year: academicYearForm.academic_year,
+								status: statusPayload,
+								hasStudents,
+								hasFaculty
+							}
+							: year
+					));
+					return list.sort((a, b) => String(a.academic_year).localeCompare(String(b.academic_year)));
+				});
+				notifications.add(`Academic Year "${academicYearForm.academic_year}" has been updated!`);
+
+				try {
+					const mapKey = 'settings_academic_year_statuses';
+					const map = JSON.parse(localStorage.getItem(mapKey) || '{}');
+					map[academicYearForm.academic_year] = statusPayload;
+					localStorage.setItem(mapKey, JSON.stringify(map));
+					window.dispatchEvent(new CustomEvent('academicYearStatusUpdated', {
+						detail: { year: academicYearForm.academic_year, status: statusPayload },
+						bubbles: true
+					}));
+				} catch (_) {}
+
+				const addedTargets = targets.filter(t => !previousTargets.includes(t));
+				addedTargets.forEach(target => {
+					try {
+						window.dispatchEvent(new CustomEvent('academicYearAdded', {
+							detail: { label, target },
+							bubbles: true
+						}));
+					} catch (_) {}
+					if (target === 'Faculty') {
+						ensureCustomYear('facultyCustomYears');
+					} else {
+						ensureCustomYear('studentsCustomYears');
+					}
+				});
+			} else {
+				const nextId = academicYears.length ? Math.max(...academicYears.map(y => Number(y.id) || 0)) + 1 : 1;
+				const newYear = {
+					id: nextId,
+					academic_year: academicYearForm.academic_year,
+					status: statusPayload,
+					hasStudents,
+					hasFaculty
+				};
+				setAcademicYears(prev => {
+					const list = Array.isArray(prev) ? [...prev, newYear] : [newYear];
+					return list.sort((a, b) => String(a.academic_year).localeCompare(String(b.academic_year)));
+				});
+				notifications.add(`Academic Year "${newYear.academic_year}" has been added!`);
+
+				try {
+					const mapKey = 'settings_academic_year_statuses';
+					const map = JSON.parse(localStorage.getItem(mapKey) || '{}');
+					map[newYear.academic_year] = statusPayload;
+					localStorage.setItem(mapKey, JSON.stringify(map));
+					window.dispatchEvent(new CustomEvent('academicYearStatusUpdated', {
+						detail: { year: newYear.academic_year, status: statusPayload },
+						bubbles: true
+					}));
+				} catch (_) {}
+
+				targets.forEach(target => {
+					try {
+						window.dispatchEvent(new CustomEvent('academicYearAdded', {
+							detail: { label, target },
+							bubbles: true
+						}));
+					} catch (_) {}
+					if (target === 'Faculty') {
+						ensureCustomYear('facultyCustomYears');
+					} else {
+						ensureCustomYear('studentsCustomYears');
+					}
+				});
 			}
 			closeModal();
 		} catch (err) {
@@ -589,16 +955,22 @@ const Settings = () => {
 				status: item.status || 'Active'
 			});
 		} else if (type === 'academic_year') {
+			const targets = [];
+			if (item?.hasStudents) targets.push('Students');
+			if (item?.hasFaculty) targets.push('Faculty');
+			if (!targets.length) targets.push('Students');
 			setAcademicYearForm({
 				academic_year: item.academic_year || '',
-				status: item.status || 'Active'
+				status: item.status || 'Active',
+				targets
 			});
 		}
 		
 		setShowModal(true);
 	};
 
-	const updateAcademicYearStatus = async (item, newStatus) => {
+	const updateAcademicYearStatus = async (item, newStatus, options = {}) => {
+		const { silent = false } = options || {};
 		const action = String(newStatus).toLowerCase() === 'archived' ? 'archived' : 'restored';
 		// Update local list
 		setAcademicYears(prev => prev.map(year => year.id === item.id ? { ...year, status: newStatus } : year));
@@ -631,7 +1003,9 @@ const Settings = () => {
 				window.dispatchEvent(new CustomEvent('academicYearRestored', { detail: { label }, bubbles: true }));
 			}
 		} catch (_) {}
-		notifications.add(`Academic Year "${item.academic_year}" has been ${action} successfully!`);
+		if (!silent) {
+			notifications.add(`Academic Year "${item.academic_year}" has been ${action} successfully!`);
+		}
 	};
 
 	const handleArchive = async (item, type) => {
@@ -877,6 +1251,71 @@ const Settings = () => {
 			</div>
 		</div>
 	)}
+
+	{bulkConfirm.show && (
+		<div
+			className="students-modal-bg"
+			style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500 }}
+			onClick={() => !bulkConfirmInProgress && closeBulkConfirm()}
+		>
+			<div
+				className="students-modal"
+				onClick={(e) => e.stopPropagation()}
+				style={{ background: '#fff', width: '100%', maxWidth: 460, padding: '32px 36px', borderRadius: 22, boxShadow: '0 8px 28px rgba(0,0,0,.18)' }}
+			>
+				{(() => {
+					const actionLabel = bulkConfirm.action === 'restore' ? 'Restore' : 'Archive';
+					const subjectLabel = bulkConfirm.subject === 'courses' ? 'Courses' : bulkConfirm.subject === 'departments' ? 'Departments' : 'Academic Years';
+					const count = bulkConfirm.ids?.length || 0;
+					return (
+						<>
+							<h3 style={{ marginTop: 0, marginBottom: 6 }}>
+								{actionLabel} {count} {subjectLabel}
+							</h3>
+							<div style={{ fontSize: 14, lineHeight: 1.5, color: '#374151', marginBottom: 18 }}>
+								You are about to {actionLabel.toLowerCase()} <b>{count}</b> {subjectLabel.toLowerCase()}.
+								<br /><br />
+								Type <code style={{ background: '#f3f4f6', padding: '2px 4px', borderRadius: 4 }}>{actionLabel}</code> to confirm.
+							</div>
+						</>
+					);
+				})()}
+				<input
+					autoFocus
+					type="text"
+					placeholder={`Type "${bulkConfirm.action === 'restore' ? 'Restore' : 'Archive'}" to confirm`}
+					value={bulkConfirmText}
+					onChange={(e) => setBulkConfirmText(e.target.value)}
+					style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #d1d5db', marginBottom: 20, fontSize: 14 }}
+					disabled={bulkConfirmInProgress}
+				/>
+				<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+					<button
+						type="button"
+						onClick={() => !bulkConfirmInProgress && closeBulkConfirm()}
+						disabled={bulkConfirmInProgress}
+						style={{ background: '#e5e7eb', border: 'none', padding: '8px 18px', borderRadius: 10, fontWeight: 600 }}
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						onClick={performBulkAction}
+						disabled={bulkConfirmText !== (bulkConfirm.action === 'restore' ? 'Restore' : 'Archive') || bulkConfirmInProgress}
+						style={{
+							background: bulkConfirmText === (bulkConfirm.action === 'restore' ? 'Restore' : 'Archive') && !bulkConfirmInProgress
+								? (bulkConfirm.action === 'restore' ? '#16a34a' : '#dc2626')
+								: (bulkConfirm.action === 'restore' ? '#bbf7d0' : '#fca5a5'),
+							color: '#fff', border: 'none', padding: '8px 22px', borderRadius: 10, fontWeight: 600,
+							cursor: bulkConfirmText === (bulkConfirm.action === 'restore' ? 'Restore' : 'Archive') && !bulkConfirmInProgress ? 'pointer' : 'not-allowed'
+						}}
+					>
+						{bulkConfirmInProgress ? (bulkConfirm.action === 'restore' ? 'Restoring...' : 'Archiving...') : (bulkConfirm.action === 'restore' ? 'Restore' : 'Archive')}
+					</button>
+				</div>
+			</div>
+		</div>
+	)}
 			<div className="settings-stats-row" style={{ marginTop: 8 }}>
 				<div className="settings-stat-card bg-sky">
 					<div className="settings-stat-value">{totalCourses.toLocaleString()}</div>
@@ -1025,12 +1464,69 @@ const Settings = () => {
 						</div>
 					</div>
 
+					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0 8px', gap: 12, flexWrap: 'wrap' }}>
+						{!courseSelectionMode ? (
+							<button
+								type="button"
+								style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 14px', borderRadius: 10, fontWeight: 700 }}
+								onClick={() => {
+									setCourseSelectionMode(true);
+									setSelectedCourseIds(new Set());
+								}}
+								disabled={!filteredCourses.length}
+							>
+								Select
+							</button>
+						) : (
+							<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+								<label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 600, cursor: 'pointer' }}>
+									<input
+										type="checkbox"
+										checked={allCoursesSelected}
+										onChange={e => {
+											if (e.target.checked) {
+												setSelectedCourseIds(new Set(displayedCourseKeys));
+											} else {
+												setSelectedCourseIds(new Set());
+											}
+										}}
+									/>
+									Select all ({filteredCourses.length})
+								</label>
+								<button
+									type="button"
+									onClick={resetCourseSelection}
+									style={{ background: '#e5e7eb', border: 'none', padding: '6px 14px', borderRadius: 10, fontWeight: 700 }}
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={() => openBulkAction('courses', showArchived ? 'restore' : 'archive', Array.from(selectedCourseIds))}
+									disabled={!selectedCoursesCount}
+									style={{
+										background: selectedCoursesCount ? (showArchived ? '#16a34a' : '#dc2626') : '#e5e7eb',
+										color: selectedCoursesCount ? '#fff' : '#6b7280',
+										border: 'none',
+										padding: '6px 18px',
+										borderRadius: 10,
+										fontWeight: 700,
+										cursor: selectedCoursesCount ? 'pointer' : 'not-allowed'
+									}}
+								>
+									{showArchived ? `Restore Selected (${selectedCoursesCount})` : `Archive Selected (${selectedCoursesCount})`}
+								</button>
+							</div>
+						)}
+					</div>
+
 					{/* Table */}
 					<div className="settings-ui-table-wrap">
 						{error && <div className="settings-ui-error">{error}</div>}
 						<table className="settings-ui-table">
 							<thead>
 								<tr>
+									{courseSelectionMode && <th style={{ width: 42 }}></th>}
 									<th>ID</th>
 									<th>Course Name</th>
 									<th>Department</th>
@@ -1040,7 +1536,7 @@ const Settings = () => {
 							</thead>
 							<tbody>
 								{loading ? (
-									<tr><td colSpan="5" className="loading-cell">Loading...</td></tr>
+									<tr><td colSpan={courseSelectionMode ? 6 : 5} className="loading-cell">Loading...</td></tr>
 								) : filteredCourses.length ? (
 									(() => {
 										// Group courses by department/program
@@ -1057,7 +1553,7 @@ const Settings = () => {
 											// Section header for department
 											rows.push(
 												<tr key={`dept-${dept}`} className="group-header-row">
-													<td colSpan={5} style={{
+													<td colSpan={courseSelectionMode ? 6 : 5} style={{
 														background: '#f8fafc',
 														color: '#111827',
 														fontWeight: 700,
@@ -1073,8 +1569,28 @@ const Settings = () => {
 											groups[dept]
 												.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
 												.forEach((course) => {
+													const key = getCourseRowKey(course);
 													rows.push(
 														<tr key={course.id ?? `course-${dept}-${course.name}`}>
+															{courseSelectionMode && (
+																<td style={{ width: 42 }}>
+																	<input
+																		type="checkbox"
+																		checked={selectedCourseIds.has(key)}
+																		onChange={() => {
+																			setSelectedCourseIds(prev => {
+																				const next = new Set(prev);
+																				if (next.has(key)) {
+																					next.delete(key);
+																				} else {
+																					next.add(key);
+																				}
+																				return next;
+																			});
+																		}}
+																	/>
+																</td>
+															)}
 															<td><strong>{course?.id ?? '—'}</strong></td>
 															<td style={{ fontWeight: 600 }}>{course?.name || '—'}</td>
 															<td><span style={{ color: '#2563eb', fontWeight: 600 }}>{course?.program || '—'}</span></td>
@@ -1087,7 +1603,7 @@ const Settings = () => {
 										return rows;
 									})()
 								) : (
-									<tr><td colSpan="5" className="empty-row">No courses match your filters</td></tr>
+									<tr><td colSpan={courseSelectionMode ? 6 : 5} className="empty-row">No courses match your filters</td></tr>
 								)}
 							</tbody>
 						</table>
@@ -1184,12 +1700,69 @@ const Settings = () => {
 						</div>
 					</div>
 
+					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0 8px', gap: 12, flexWrap: 'wrap' }}>
+						{!departmentSelectionMode ? (
+							<button
+								type="button"
+								style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 14px', borderRadius: 10, fontWeight: 700 }}
+								onClick={() => {
+									setDepartmentSelectionMode(true);
+									setSelectedDepartmentIds(new Set());
+								}}
+								disabled={!filteredDepartments.length}
+							>
+								Select
+							</button>
+						) : (
+							<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+								<label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 600, cursor: 'pointer' }}>
+									<input
+										type="checkbox"
+										checked={allDepartmentsSelected}
+										onChange={e => {
+											if (e.target.checked) {
+												setSelectedDepartmentIds(new Set(displayedDepartmentKeys));
+											} else {
+												setSelectedDepartmentIds(new Set());
+											}
+										}}
+									/>
+									Select all ({filteredDepartments.length})
+								</label>
+								<button
+									type="button"
+									onClick={resetDepartmentSelection}
+									style={{ background: '#e5e7eb', border: 'none', padding: '6px 14px', borderRadius: 10, fontWeight: 700 }}
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={() => openBulkAction('departments', showArchived ? 'restore' : 'archive', Array.from(selectedDepartmentIds))}
+									disabled={!selectedDepartmentsCount}
+									style={{
+										background: selectedDepartmentsCount ? (showArchived ? '#16a34a' : '#dc2626') : '#e5e7eb',
+										color: selectedDepartmentsCount ? '#fff' : '#6b7280',
+										border: 'none',
+										padding: '6px 18px',
+										borderRadius: 10,
+										fontWeight: 700,
+										cursor: selectedDepartmentsCount ? 'pointer' : 'not-allowed'
+									}}
+								>
+									{showArchived ? `Restore Selected (${selectedDepartmentsCount})` : `Archive Selected (${selectedDepartmentsCount})`}
+								</button>
+							</div>
+						)}
+					</div>
+
 					{/* Table */}
 					<div className="settings-ui-table-wrap">
 						{error && <div className="settings-ui-error">{error}</div>}
 						<table className="settings-ui-table">
 							<thead>
 								<tr>
+									{departmentSelectionMode && <th style={{ width: 42 }}></th>}
 									<th>ID</th>
 									<th>Department Name</th>
 									<th>Status</th>
@@ -1198,18 +1771,40 @@ const Settings = () => {
 							</thead>
 							<tbody>
 								{loading ? (
-									<tr><td colSpan="4" className="loading-cell">Loading...</td></tr>
+									<tr><td colSpan={departmentSelectionMode ? 5 : 4} className="loading-cell">Loading...</td></tr>
 								) : filteredDepartments.length ? (
-									filteredDepartments.map((department) => (
-										<tr key={department.id ?? `dept-${department.name}`}>
-											<td><strong>{department?.id ?? '—'}</strong></td>
-											<td style={{ fontWeight: 600 }}>{department?.name || '—'}</td>
-											<td>{renderStatusPill(department?.status)}</td>
-											<td>{renderActionButtons(department, 'department')}</td>
-										</tr>
-									))
+									filteredDepartments.map((department) => {
+										const rowKey = getDepartmentRowKey(department);
+										return (
+											<tr key={department.id ?? `dept-${department.name}`}>
+												{departmentSelectionMode && (
+													<td style={{ width: 42 }}>
+														<input
+															type="checkbox"
+															checked={selectedDepartmentIds.has(rowKey)}
+															onChange={() => {
+																setSelectedDepartmentIds(prev => {
+																	const next = new Set(prev);
+																	if (next.has(rowKey)) {
+																		next.delete(rowKey);
+																	} else {
+																		next.add(rowKey);
+																	}
+																	return next;
+																});
+															}}
+														/>
+													</td>
+												)}
+												<td><strong>{department?.id ?? '—'}</strong></td>
+												<td style={{ fontWeight: 600 }}>{department?.name || '—'}</td>
+												<td>{renderStatusPill(department?.status)}</td>
+												<td>{renderActionButtons(department, 'department')}</td>
+											</tr>
+										);
+									})
 								) : (
-									<tr><td colSpan="4" className="empty-row">No departments match your filters</td></tr>
+									<tr><td colSpan={departmentSelectionMode ? 5 : 4} className="empty-row">No departments match your filters</td></tr>
 								)}
 							</tbody>
 						</table>
@@ -1321,12 +1916,69 @@ const Settings = () => {
 						</div>
 					</div>
 
+					<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0 8px', gap: 12, flexWrap: 'wrap' }}>
+						{!yearSelectionMode ? (
+							<button
+								type="button"
+								style={{ background: '#eef2ff', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 14px', borderRadius: 10, fontWeight: 700 }}
+								onClick={() => {
+									setYearSelectionMode(true);
+									setSelectedYearIds(new Set());
+								}}
+								disabled={!filteredAcademicYears.length}
+							>
+								Select
+							</button>
+						) : (
+							<div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+								<label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 600, cursor: 'pointer' }}>
+									<input
+										type="checkbox"
+										checked={allYearsSelected}
+										onChange={e => {
+											if (e.target.checked) {
+												setSelectedYearIds(new Set(displayedYearKeys));
+											} else {
+												setSelectedYearIds(new Set());
+											}
+										}}
+									/>
+									Select all ({filteredAcademicYears.length})
+								</label>
+								<button
+									type="button"
+									onClick={resetYearSelection}
+									style={{ background: '#e5e7eb', border: 'none', padding: '6px 14px', borderRadius: 10, fontWeight: 700 }}
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									onClick={() => openBulkAction('academic_years', showArchived ? 'restore' : 'archive', Array.from(selectedYearIds))}
+									disabled={!selectedYearsCount}
+									style={{
+										background: selectedYearsCount ? (showArchived ? '#16a34a' : '#dc2626') : '#e5e7eb',
+										color: selectedYearsCount ? '#fff' : '#6b7280',
+										border: 'none',
+										padding: '6px 18px',
+										borderRadius: 10,
+										fontWeight: 700,
+										cursor: selectedYearsCount ? 'pointer' : 'not-allowed'
+									}}
+								>
+									{showArchived ? `Restore Selected (${selectedYearsCount})` : `Archive Selected (${selectedYearsCount})`}
+								</button>
+							</div>
+						)}
+					</div>
+
 					{/* Table */}
 					<div className="settings-ui-table-wrap">
 						{error && <div className="settings-ui-error">{error}</div>}
 						<table className="settings-ui-table">
 							<thead>
 								<tr>
+									{yearSelectionMode && <th style={{ width: 42 }}></th>}
 									<th>ID</th>
 									<th>Academic Year</th>
 									<th>Source</th>
@@ -1336,13 +1988,34 @@ const Settings = () => {
 							</thead>
 							<tbody>
 								{loading ? (
-									<tr><td colSpan="5" className="loading-cell">Loading...</td></tr>
+									<tr><td colSpan={yearSelectionMode ? 6 : 5} className="loading-cell">Loading...</td></tr>
 								) : filteredAcademicYears.length ? (
-									filteredAcademicYears.map((year) => (
-										<tr key={year.id ?? `year-${year.academic_year}`}>
-											<td><strong>{year?.id ?? '—'}</strong></td>
-											<td style={{ fontWeight: 600 }}>{year?.academic_year || '—'}</td>
-											<td>
+									filteredAcademicYears.map((year) => {
+										const rowKey = getAcademicYearRowKey(year);
+										return (
+											<tr key={year.id ?? `year-${year.academic_year}`}>
+												{yearSelectionMode && (
+													<td style={{ width: 42 }}>
+														<input
+															type="checkbox"
+															checked={selectedYearIds.has(rowKey)}
+															onChange={() => {
+																setSelectedYearIds(prev => {
+																	const next = new Set(prev);
+																	if (next.has(rowKey)) {
+																		next.delete(rowKey);
+																	} else {
+																		next.add(rowKey);
+																	}
+																	return next;
+																});
+															}}
+														/>
+													</td>
+												)}
+												<td><strong>{year?.id ?? '—'}</strong></td>
+												<td style={{ fontWeight: 600 }}>{year?.academic_year || '—'}</td>
+												<td>
 												{year?.hasStudents && (
 													<span style={{
 														display: 'inline-block',
@@ -1372,9 +2045,10 @@ const Settings = () => {
 											<td>{renderStatusPill(year?.status)}</td>
 											<td>{renderActionButtons(year, 'academic_year')}</td>
 										</tr>
-									))
+										);
+									})
 								) : (
-									<tr><td colSpan="5" className="empty-row">No academic years match your filters</td></tr>
+									<tr><td colSpan={yearSelectionMode ? 6 : 5} className="empty-row">No academic years match your filters</td></tr>
 								)}
 							</tbody>
 						</table>
@@ -1581,16 +2255,19 @@ const Settings = () => {
 								/>
 							</div>
 							<div className="form-group">
-								<label>Target *</label>
-								<select 
-									name="target" 
-									value={academicYearForm.target} 
-									onChange={handleAcademicYearFormChange}
-									required
-								>
-									<option value="Students">Students</option>
-									<option value="Faculty">Faculty</option>
-								</select>
+								<label>Targets *</label>
+								<div className="checkbox-group" style={{ display: 'flex', gap: 12 }}>
+									{['Students', 'Faculty'].map(option => (
+										<label key={option} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+											<input
+												type="checkbox"
+												checked={(academicYearForm.targets || []).includes(option)}
+												onChange={() => toggleAcademicYearTarget(option)}
+											/>
+											<span>{option}</span>
+										</label>
+									))}
+								</div>
 							</div>
 							<div className="form-group">
 								<label>Status *</label>

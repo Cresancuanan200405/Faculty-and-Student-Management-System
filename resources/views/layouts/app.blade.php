@@ -9,6 +9,8 @@
 
     <title>{{ config('app.name', 'Laravel') }}</title>
 
+    <link rel="icon" type="image/jpeg" href="{{ asset('images/urios_logo.jpg') }}">
+
     <!-- Scripts -->
     <script src="{{ asset('js/app.js') }}" defer></script>
 

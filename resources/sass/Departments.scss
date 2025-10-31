@@ -332,6 +332,11 @@
   tbody tr:hover {
     background: #f8fafc;
   }
+
+  th:last-child,
+  td:last-child {
+    text-align: center;
+  }
 }
 
 .department-cell {
@@ -392,7 +397,10 @@
 
 .row-actions {
   display: flex;
+  justify-content: center;
+  align-items: center;
   gap: 0.5rem;
+  margin: 0 auto;
 }
 
 .icon-btn {

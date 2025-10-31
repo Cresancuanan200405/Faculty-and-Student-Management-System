@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Faculty & Student Management System</title>
+    <title>Urios System</title>
+    <link rel="icon" type="image/jpeg" href="{{ asset('images/urios_logo.jpg') }}">
     <link href="{{ mix('css/app.css') }}" rel="stylesheet">
 </head>
 <body>
