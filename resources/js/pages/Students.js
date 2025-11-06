@@ -123,6 +123,14 @@ const Students = () => {
   const [editPhotoFile, setEditPhotoFile] = useState(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState(null);
   const [removeEditPhoto, setRemoveEditPhoto] = useState(false);
+  // Read-only view modal
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewStudent, setViewStudent] = useState(null);
+  const isInteractiveClick = (target) => {
+    try {
+      return !!(target.closest && target.closest('button, a, input, label, select, textarea, [role="button"], .students-action-btn, .students-folder-menu-btn'));
+    } catch (_) { return false; }
+  };
 
   // Academic Year statuses from Settings (Active, Inactive, Completed, Archived)
   const [ayStatuses, setAyStatuses] = useState(() => {
@@ -336,6 +344,22 @@ const Students = () => {
     reader.readAsDataURL(file);
     event.target.value = "";
     setRemoveEditPhoto(false);
+  };
+
+  const openViewStudent = (stu) => {
+    setViewStudent(stu);
+    setViewModalOpen(true);
+  };
+
+  const closeViewStudent = () => {
+    setViewModalOpen(false);
+    setViewStudent(null);
+  };
+
+  const handleRowClick = (stu) => (e) => {
+    if (selectionMode) return;
+    if (isInteractiveClick(e.target)) return;
+    openViewStudent(stu);
   };
 
   const openAddStudentModal = () => {
@@ -1814,7 +1838,7 @@ const Students = () => {
                     );
                   }
                   return list.map(stu => (
-                    <div className="students-list-row" key={stu.id}>
+                    <div className="students-list-row" key={stu.id} onClick={handleRowClick(stu)} style={{ cursor: selectionMode ? 'default' : 'pointer' }}>
                       {selectionMode && (
                         <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
                           <input
@@ -1917,7 +1941,7 @@ const Students = () => {
                   );
                 }
                 return list.map(stu => (
-                  <div className="students-list-row" key={stu.id}>
+                  <div className="students-list-row" key={stu.id} onClick={handleRowClick(stu)} style={{ cursor: selectionMode ? 'default' : 'pointer' }}>
                     {selectionMode && (
                       <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
                         <input
@@ -1931,7 +1955,7 @@ const Students = () => {
                         />
                       </div>
                     )}
-                    <div className="students-list-student">
+                    <div className="students-list-student" onClick={() => !selectionMode && openViewStudent(stu)} style={{ cursor: selectionMode ? 'default' : 'pointer' }}>
                       <img
                         src={stu.photo_url || stu.avatar || "/avatar1.png"}
                         alt={stu.first_name + " " + stu.last_name}
@@ -2077,7 +2101,7 @@ const Students = () => {
               </div>
               {filteredStudents.length > 0 ? (
                 filteredStudents.map((stu) => (
-                  <div className="students-list-row" key={stu.id}>
+                  <div className="students-list-row" key={stu.id} onClick={handleRowClick(stu)} style={{ cursor: selectionMode ? 'default' : 'pointer' }}>
                     {selectionMode && (
                       <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
                         <input
@@ -2091,13 +2115,14 @@ const Students = () => {
                         />
                       </div>
                     )}
-                    <div className="students-list-student">
+                    <div className="students-list-student" onClick={() => !selectionMode && openViewStudent(stu)} style={{ cursor: selectionMode ? 'default' : 'pointer' }}>
                         <img
                         src={stu.photo_url || stu.avatar || "/avatar1.png"}
                         alt={stu.first_name + " " + stu.last_name}
                         className="students-list-avatar"
                       />
                       <div>
+
                         <div className="students-list-name">
                           {stu.first_name} {stu.last_name}
                         </div>
@@ -2482,6 +2507,71 @@ const Students = () => {
         </div>
       )}
 
+      {viewModalOpen && viewStudent && (
+        <div
+          className="students-modal-bg"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2600 }}
+          onClick={closeViewStudent}
+        >
+          <div
+            className="students-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#fff', width: '100%', maxWidth: 640, padding: '28px 32px', borderRadius: 20 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Student Details</h3>
+              <button onClick={closeViewStudent} style={{ background: '#e5e7eb', border: 'none', padding: '6px 10px', borderRadius: 8, fontWeight: 700 }}>Close</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '96px 1fr', gap: 16, alignItems: 'center', marginBottom: 16 }}>
+              <img src={viewStudent.photo_url || viewStudent.avatar || '/avatar1.png'} alt={viewStudent.first_name + ' ' + viewStudent.last_name} style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', border: '2px solid #e5e7eb' }} />
+              <div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{viewStudent.first_name} {viewStudent.last_name}</div>
+                <div style={{ color: '#6b7280' }}>ID: {viewStudent.id}</div>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Email</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewStudent.email || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Phone</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewStudent.phone || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Gender</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewStudent.gender || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Birthdate</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewStudent.birthdate ? new Date(viewStudent.birthdate).toLocaleDateString() : '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Academic Year</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{normalizeYearLabel(viewStudent.academic_year) || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Status</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewStudent.status || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Department</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewStudent.department || '—'}</div>
+              </div>
+              {viewStudent.program ? (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Program</label>
+                  <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewStudent.program}</div>
+                </div>
+              ) : null}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Last Updated</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewStudent.updated_at ? new Date(viewStudent.updated_at).toLocaleString() : '—'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {editModal && (
         <div className="students-modal-bg" onClick={closeEditStudentModal}>
           <div

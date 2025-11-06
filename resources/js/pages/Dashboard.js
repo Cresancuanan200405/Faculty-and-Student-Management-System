@@ -2,8 +2,165 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axiosLib from "axios";
 import '../../sass/Dashboard.scss';
 import '../utils/activityBus'; // ensure bus is available for the whole app
+// Charts
+import { Bar, Doughnut } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Tooltip,
+  Legend,
+  Title
+} from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, Title);
 
 const DASHBOARD_BANNER_IMG = "/images/Dashboard_Manager.png"; // from public/images
+
+// Lightweight, self-contained calendar component for the dashboard bottom section
+const CalendarWidget = ({ activities = [] }) => {
+  const [viewDate, setViewDate] = useState(() => {
+    // Normalize to first of month to simplify calculations
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+
+  const todayKey = useMemo(() => {
+    const t = new Date();
+    const y = t.getFullYear();
+    const m = t.getMonth() + 1;
+    const d = t.getDate();
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }, []);
+
+  // Build a quick map of activity counts keyed by YYYY-MM-DD
+  const activityMap = useMemo(() => {
+    const map = new Map();
+    activities.forEach(a => {
+      const dt = new Date(a.timestamp);
+      if (isNaN(dt)) return;
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const d = String(dt.getDate()).padStart(2, '0');
+      const key = `${y}-${m}-${d}`;
+      map.set(key, (map.get(key) || 0) + 1);
+    });
+    return map;
+  }, [activities]);
+
+  const monthMeta = useMemo(() => {
+    const year = viewDate.getFullYear();
+    const month = viewDate.getMonth();
+    // First day of current view month
+    const first = new Date(year, month, 1);
+    const firstWeekday = first.getDay(); // 0=Sun..6=Sat
+    // Days in current month
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    // Previous month trailing days count to fill grid start
+    const prevMonthDays = new Date(year, month, 0).getDate();
+
+    // Build 42 cells (6 weeks) to keep height stable
+    const cells = [];
+
+    // Leading days from previous month
+    for (let i = firstWeekday - 1; i >= 0; i--) {
+      const day = prevMonthDays - i;
+      const dateObj = new Date(year, month - 1, day);
+      const key = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      cells.push({
+        key,
+        label: day,
+        inMonth: false,
+        isToday: key === todayKey,
+        activityCount: activityMap.get(key) || 0,
+      });
+    }
+
+    // Current month days
+    for (let d = 1; d <= daysInMonth; d++) {
+      const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push({
+        key,
+        label: d,
+        inMonth: true,
+        isToday: key === todayKey,
+        activityCount: activityMap.get(key) || 0,
+      });
+    }
+
+    // Trailing days from next month to reach 42 cells
+    const trailing = 42 - cells.length;
+    for (let d = 1; d <= trailing; d++) {
+      const dateObj = new Date(year, month + 1, d);
+      const key = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push({
+        key,
+        label: d,
+        inMonth: false,
+        isToday: key === todayKey,
+        activityCount: activityMap.get(key) || 0,
+      });
+    }
+
+    const monthLabel = first.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+    return { cells, monthLabel };
+  }, [viewDate, activityMap, todayKey]);
+
+  const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  const goPrev = () => setViewDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  const goNext = () => setViewDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1));
+  const goToday = () => {
+    const t = new Date();
+    setViewDate(new Date(t.getFullYear(), t.getMonth(), 1));
+  };
+
+  return (
+    <div className="dashboard-calendar">
+      <div className="cal-header">
+        <div className="cal-title">{monthMeta.monthLabel}</div>
+        <div className="cal-nav">
+          <button className="cal-btn" onClick={goPrev} aria-label="Previous month">◀</button>
+          <button className="cal-btn cal-today" onClick={goToday}>Today</button>
+          <button className="cal-btn" onClick={goNext} aria-label="Next month">▶</button>
+        </div>
+      </div>
+
+      <div className="cal-grid cal-weekdays">
+        {weekDays.map(d => (
+          <div key={d} className="cal-weekday">{d}</div>
+        ))}
+      </div>
+      <div className="cal-grid cal-days">
+        {monthMeta.cells.map(cell => (
+          <div
+            key={cell.key}
+            className={[
+              'cal-day',
+              cell.inMonth ? 'in-month' : 'other-month',
+              cell.isToday ? 'today' : ''
+            ].join(' ')}
+            title={`${cell.key}${cell.activityCount ? ` · ${cell.activityCount} activities` : ''}`}
+          >
+            <div className="cal-day-label">{cell.label}</div>
+            {cell.activityCount > 0 && (
+              <div className="cal-activity-dots" aria-hidden>
+                {Array.from({ length: Math.min(cell.activityCount, 3) }).map((_, i) => (
+                  <span key={i} className="cal-activity-dot" />
+                ))}
+                {cell.activityCount > 3 && (
+                  <span className="cal-activity-more">+{cell.activityCount - 3}</span>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 const Dashboard = () => {
   const [tab, setTab] = useState('Programs');
@@ -228,6 +385,70 @@ const Dashboard = () => {
       })
       .sort((a, b) => b.count - a.count);
   }, [departments, faculty]);
+
+  // ---------- Charts data ----------
+  // Palette to match existing aesthetic
+  const chartPalette = ['#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#8b5cf6','#10b981','#f97316','#84cc16','#06b6d4','#a855f7','#14b8a6'];
+
+  const studentsPerDeptChart = useMemo(() => {
+    const labels = (studentsPerDept.counts || []).map(i => i.name);
+    const data = (studentsPerDept.counts || []).map(i => i.count);
+    return {
+      data: {
+        labels,
+        datasets: [{
+          label: 'Students',
+          data,
+          backgroundColor: labels.map((_, idx) => chartPalette[idx % chartPalette.length]),
+          borderRadius: 8,
+          borderSkipped: false,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: 'Students per Department', color: '#111827', font: { size: 14, weight: 'bold' } }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#6b7280' },
+            grid: { display: false }
+          },
+          y: {
+            ticks: { color: '#6b7280', precision: 0 },
+            grid: { color: 'rgba(0,0,0,0.05)' }
+          }
+        }
+      }
+    };
+  }, [studentsPerDept, chartPalette]);
+
+  const facultyDistributionChart = useMemo(() => {
+    const top = (facultyDistribution || []).slice(0, 12); // cap slices for clarity
+    const labels = top.map(i => i.name);
+    const data = top.map(i => i.count);
+    return {
+      data: {
+        labels,
+        datasets: [{
+          label: 'Faculty',
+          data,
+          backgroundColor: labels.map((_, idx) => chartPalette[idx % chartPalette.length]),
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#374151' } },
+          title: { display: true, text: 'Faculty Distribution', color: '#111827', font: { size: 14, weight: 'bold' } }
+        }
+      }
+    };
+  }, [facultyDistribution, chartPalette]);
 
   // Stats cards (must return an array, not an object)
   const stats = useMemo(() => ([
@@ -891,6 +1112,45 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Charts Section - Always visible */}
+      <div className="dashboard-program-overview">
+        <div className="prog-header">
+          <div className="prog-title">Charts</div>
+          <div className="prog-sub">Visual summaries of students and faculty</div>
+        </div>
+
+        <div className="dashboard-charts-grid">
+          <div className="chart-card">
+            {loading || (studentsPerDept?.counts || []).length === 0 ? (
+              <div className="chart-empty">No student data to display</div>
+            ) : (
+              <div className="chart-canvas">
+                <Bar data={studentsPerDeptChart.data} options={studentsPerDeptChart.options} />
+              </div>
+            )}
+          </div>
+
+          <div className="chart-card">
+            {loading || (facultyDistribution || []).length === 0 ? (
+              <div className="chart-empty">No faculty data to display</div>
+            ) : (
+              <div className="chart-canvas">
+                <Doughnut data={facultyDistributionChart.data} options={facultyDistributionChart.options} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Calendar Section */}
+      <div className="dashboard-program-overview">
+        <div className="prog-header">
+          <div className="prog-title">Calendar</div>
+          <div className="prog-sub">Quick glance at this month · activity days are marked</div>
+        </div>
+        <CalendarWidget activities={activities} />
+      </div>
     </div>
   );
 };

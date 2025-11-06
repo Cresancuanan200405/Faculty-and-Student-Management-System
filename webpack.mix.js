@@ -7,7 +7,13 @@ mix.webpackConfig({
    stats: 'minimal',
    resolve: {
       // Ensure extensions include leading dot to avoid warnings
-      extensions: ['.wasm', '.mjs', '.js', '.jsx', '.json']
+      extensions: ['.wasm', '.mjs', '.js', '.jsx', '.json'],
+      // Fix ESM fully specified resolution issues and React 17 jsx-runtime path
+      alias: {
+         'react/jsx-runtime': 'react/jsx-runtime.js'
+      },
+      // In Webpack 5, ensure extensionless ESM specifiers are allowed
+      fullySpecified: false
    }
 });
 

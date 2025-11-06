@@ -604,6 +604,21 @@ const Courses = () => {
               <p className="courses-section-subtitle">Academic courses with detailed information</p>
             </div>
           </div>
+          {/* Overview-specific search bar */}
+          <div className="courses-ui-filters" style={{ marginTop: 8, marginBottom: 14 }}>
+            <div className="search-box" style={{ maxWidth: 380 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" stroke="currentColor" fill="none">
+                <circle cx="11" cy="11" r="8"/>
+                <path d="M21 21l-4.35-4.35"/>
+              </svg>
+              <input
+                placeholder="Search Courses in Overview..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                aria-label="Search courses in overview"
+              />
+            </div>
+          </div>
           
           <div className="course-cards-grid">
             {filtered.map((course) => {

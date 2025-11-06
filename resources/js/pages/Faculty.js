@@ -179,6 +179,14 @@ const Faculty = () => {
   const [editPhotoFile, setEditPhotoFile] = useState(null);
   const [editPhotoPreview, setEditPhotoPreview] = useState(null);
   const [removeEditPhoto, setRemoveEditPhoto] = useState(false);
+  // Read-only view modal
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewMember, setViewMember] = useState(null);
+  const isInteractiveClick = (target) => {
+    try {
+      return !!(target.closest && target.closest('button, a, input, label, select, textarea, [role="button"], .students-action-btn, .students-folder-menu-btn'));
+    } catch (_) { return false; }
+  };
 
   // Academic Year statuses from Settings (Active, Inactive, Completed, Archived)
   const [ayStatuses, setAyStatuses] = useState(() => {
@@ -374,6 +382,22 @@ const Faculty = () => {
     reader.readAsDataURL(file);
     event.target.value = "";
     setRemoveEditPhoto(false);
+  };
+
+  const openViewMember = (mem) => {
+    setViewMember(mem);
+    setViewModalOpen(true);
+  };
+
+  const closeViewMember = () => {
+    setViewModalOpen(false);
+    setViewMember(null);
+  };
+
+  const handleRowClick = (mem) => (e) => {
+    if (selectionMode) return;
+    if (isInteractiveClick(e.target)) return;
+    openViewMember(mem);
   };
 
   const openAddFacultyModal = () => {
@@ -1781,8 +1805,8 @@ const Faculty = () => {
                             </div>
 
                             {currentFacultyList.length > 0 ? (
-                                currentFacultyList.map((mem) => (
-                                    <div className="students-list-row" key={mem.id}>
+                currentFacultyList.map((mem) => (
+                  <div className="students-list-row" key={mem.id} onClick={handleRowClick(mem)} style={{ cursor: selectionMode ? 'default' : 'pointer' }}>
                                         {selectionMode && (
                                           <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
                                             <input
@@ -1796,7 +1820,7 @@ const Faculty = () => {
                                             />
                                           </div>
                                         )}
-                                        <div className="students-list-student">
+                                        <div className="students-list-student" onClick={() => !selectionMode && openViewMember(mem)} style={{ cursor: selectionMode ? 'default' : 'pointer' }}>
                                             <img
                                               src={mem.photo_url || mem.avatar || "/avatar1.png"}
                                                 alt={mem.first_name + " " + mem.last_name}
@@ -1941,7 +1965,7 @@ const Faculty = () => {
 							</div>
 							{filteredFaculty.length > 0 ? (
 								filteredFaculty.map((mem) => (
-                  <div className="students-list-row" key={mem.id}>
+                  <div className="students-list-row" key={mem.id} onClick={handleRowClick(mem)} style={{ cursor: selectionMode ? 'default' : 'pointer' }}>
                     {selectionMode && (
                       <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 8 }}>
                         <input
@@ -1955,7 +1979,7 @@ const Faculty = () => {
                         />
                       </div>
                     )}
-										<div className="students-list-student">
+                    <div className="students-list-student" onClick={() => !selectionMode && openViewMember(mem)} style={{ cursor: selectionMode ? 'default' : 'pointer' }}>
                       <img
                         src={mem.photo_url || mem.avatar || "/avatar1.png"}
 											 alt={mem.first_name + " " + mem.last_name}
@@ -2669,6 +2693,83 @@ const Faculty = () => {
           onConfirm={confirmAction}
           onCancel={() => setConfirmModal({ show: false, action: null, message: "", label: "" })}
         />
+      )}
+      {viewModalOpen && viewMember && (
+        <div
+          className="students-modal-bg"
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2600 }}
+          onClick={closeViewMember}
+        >
+          <div
+            className="students-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#fff', width: '100%', maxWidth: 720, padding: '28px 32px', borderRadius: 20 }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Faculty Details</h3>
+              <button onClick={closeViewMember} style={{ background: '#e5e7eb', border: 'none', padding: '6px 10px', borderRadius: 8, fontWeight: 700 }}>Close</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '96px 1fr', gap: 16, alignItems: 'center', marginBottom: 16 }}>
+              <img src={viewMember.photo_url || viewMember.avatar || '/avatar1.png'} alt={viewMember.first_name + ' ' + viewMember.last_name} style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', border: '2px solid #e5e7eb' }} />
+              <div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{viewMember.first_name} {viewMember.last_name}</div>
+                <div style={{ color: '#6b7280' }}>ID: {viewMember.id}</div>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Email</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.email || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Phone</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.phone || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Gender</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.gender || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Birthdate</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.birthdate ? new Date(viewMember.birthdate).toLocaleDateString() : '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Academic Year</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{toYearLabel(viewMember.academic_year) || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Status</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.status || '—'}</div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Department</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.department || '—'}</div>
+              </div>
+              {viewMember.program ? (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Program / Position</label>
+                  <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.program}</div>
+                </div>
+              ) : null}
+              {viewMember.assigned_program ? (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Assigned Program</label>
+                  <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.assigned_program}</div>
+                </div>
+              ) : null}
+              {viewMember.dean_department ? (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Dean Department</label>
+                  <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.dean_department}</div>
+                </div>
+              ) : null}
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ fontSize: 12, color: '#6b7280', marginBottom: 4 }}>Last Updated</label>
+                <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewMember.updated_at ? new Date(viewMember.updated_at).toLocaleString() : '—'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showArchiveConfirm && (
