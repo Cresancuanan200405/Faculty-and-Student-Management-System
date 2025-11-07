@@ -298,17 +298,61 @@ const Reports = () => {
 	const totalFaculty = faculty.length;
 	const reportsGenerated = filteredStudents.length; // using current results as a proxy
 
-	const currentAcademicYear = useMemo(() => {
+	// Active Academic Year determination:
+	// 1. Read statuses map from localStorage ('settings_academic_year_statuses').
+	// 2. Prefer the year whose status is 'Active'. If multiple, choose the latest by first year part.
+	// 3. Fallback to date-based inference (August boundary) if none Active.
+	const [activeAcademicYear, setActiveAcademicYear] = useState('');
+
+	const computeDateFallbackYear = () => {
 		const now = new Date();
 		const y = now.getFullYear();
-		const m = now.getMonth(); // 0-11
-		// Assume academic year starts in August (month 7)
-		if (m >= 7) {
-			return `${y}-${String((y + 1) % 100).padStart(2, '0')}`;
-		} else {
-			return `${y - 1}-${String(y % 100).padStart(2, '0')}`;
+		const m = now.getMonth();
+		return m >= 7
+			? `${y}-${String((y + 1) % 100).padStart(2, '0')}`
+			: `${y - 1}-${String(y % 100).padStart(2, '0')}`;
+	};
+
+	const rebuildActiveAcademicYear = useCallback(() => {
+		let map = {};
+		try {
+			map = JSON.parse(localStorage.getItem('settings_academic_year_statuses') || '{}');
+		} catch (e) {
+			console.warn('Failed reading AY statuses', e);
 		}
+		// Filter active years
+		const entries = Object.entries(map).filter(([, status]) => String(status).toLowerCase() === 'active');
+		if (entries.length) {
+			// Sort by starting year descending (e.g. 2025-2026 before 2024-2025)
+			entries.sort((a, b) => {
+				const ay = a[0].match(/\d{4}/);
+				const by = b[0].match(/\d{4}/);
+				const ai = ay ? parseInt(ay[0], 10) : 0;
+				const bi = by ? parseInt(by[0], 10) : 0;
+				return bi - ai;
+			});
+			setActiveAcademicYear(entries[0][0]);
+			return;
+		}
+		// Fallback
+		setActiveAcademicYear(computeDateFallbackYear());
 	}, []);
+
+	useEffect(() => {
+		rebuildActiveAcademicYear();
+		// Listen for Settings changes
+		const onStatus = () => rebuildActiveAcademicYear();
+		const onAdd = () => rebuildActiveAcademicYear();
+		const onDelete = () => rebuildActiveAcademicYear();
+		window.addEventListener('academicYearStatusUpdated', onStatus);
+		window.addEventListener('academicYearAdded', onAdd);
+		window.addEventListener('academicYearDeleted', onDelete);
+		return () => {
+			window.removeEventListener('academicYearStatusUpdated', onStatus);
+			window.removeEventListener('academicYearAdded', onAdd);
+			window.removeEventListener('academicYearDeleted', onDelete);
+		};
+	}, [rebuildActiveAcademicYear]);
 
 	// Export CSV of filtered
 	const exportCSV = () => {
@@ -448,9 +492,9 @@ const Reports = () => {
 					<div className="departments-stat-sub">This session</div>
 				</div>
 				<div className="departments-stat-card bg-sky-2">
-					<div className="departments-stat-value">{currentAcademicYear}</div>
+					<div className="departments-stat-value">{activeAcademicYear || '—'}</div>
 					<div className="departments-stat-label">Academic Year</div>
-					<div className="departments-stat-sub">Current period</div>
+					<div className="departments-stat-sub">{activeAcademicYear ? 'Active period' : 'Not set'}</div>
 				</div>
 			</div>
 

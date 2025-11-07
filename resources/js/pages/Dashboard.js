@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axiosLib from "axios";
 import '../../sass/Dashboard.scss';
 import '../utils/activityBus'; // ensure bus is available for the whole app
@@ -16,6 +16,77 @@ import {
 } from 'chart.js';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, Title);
+
+// --- Custom Chart.js Plugins for nicer visuals ---
+// Value labels on top of bars
+const barValueLabelsPlugin = {
+  id: 'barValueLabels',
+  afterDatasetsDraw(chart, args, pluginOptions) {
+    if (!pluginOptions?.show) return;
+    const { ctx } = chart;
+    ctx.save();
+    const fontSize = pluginOptions.fontSize || 11;
+    ctx.font = `${fontSize}px ${pluginOptions.fontFamily || 'Inter, system-ui, sans-serif'}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = pluginOptions.color || '#1f2937';
+    const meta = chart.getDatasetMeta(0);
+    const dataset = chart.data.datasets?.[0] || {};
+    (meta?.data || []).forEach((bar, idx) => {
+      const val = Array.isArray(dataset.data) ? dataset.data[idx] : undefined;
+      if (val == null) return;
+      const { x, y } = bar.tooltipPosition();
+      ctx.fillText(val, x, y - 4);
+    });
+    ctx.restore();
+  }
+};
+
+// Center text for doughnut chart
+const doughnutCenterTextPlugin = {
+  id: 'doughnutCenterText',
+  afterDraw(chart, args, pluginOptions) {
+    if (!pluginOptions) return;
+    const { width, height, ctx } = chart;
+    const txt = pluginOptions.text;
+    const sub = pluginOptions.subText;
+    if (!txt && !sub) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const cx = width / 2;
+    const cy = height / 2;
+    if (txt) {
+      ctx.font = `${pluginOptions.fontSize || 22}px ${pluginOptions.fontFamily || 'Inter, system-ui, sans-serif'}`;
+      ctx.fillStyle = pluginOptions.color || '#111827';
+      ctx.fillText(txt, cx, cy - (sub ? 6 : 0));
+    }
+    if (sub) {
+      ctx.font = `${(pluginOptions.subFontSize || 12)}px ${pluginOptions.fontFamily || 'Inter, system-ui, sans-serif'}`;
+      ctx.fillStyle = pluginOptions.subColor || '#6b7280';
+      ctx.fillText(sub, cx, cy + 12);
+    }
+    ctx.restore();
+  }
+};
+
+// Soft drop shadow for datasets
+const softShadowPlugin = {
+  id: 'softShadow',
+  beforeDatasetsDraw(chart, args, pluginOptions) {
+    const { ctx } = chart;
+    ctx.save();
+    ctx.shadowColor = pluginOptions.color || 'rgba(0,0,0,0.15)';
+    ctx.shadowBlur = pluginOptions.blur || 16;
+    ctx.shadowOffsetX = pluginOptions.offsetX || 0;
+    ctx.shadowOffsetY = pluginOptions.offsetY || 6;
+  },
+  afterDatasetsDraw(chart) {
+    chart.ctx.restore();
+  }
+};
+
+ChartJS.register(barValueLabelsPlugin, doughnutCenterTextPlugin, softShadowPlugin);
 
 const DASHBOARD_BANNER_IMG = "/images/Dashboard_Manager.png"; // from public/images
 
@@ -164,6 +235,7 @@ const CalendarWidget = ({ activities = [] }) => {
 
 const Dashboard = () => {
   const [tab, setTab] = useState('Programs');
+  const [hoveredQA, setHoveredQA] = useState('');
   
   const [departments, setDepartments] = useState([]);
   const [students, setStudents] = useState([]);
@@ -390,6 +462,33 @@ const Dashboard = () => {
   // Palette to match existing aesthetic
   const chartPalette = ['#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#8b5cf6','#10b981','#f97316','#84cc16','#06b6d4','#a855f7','#14b8a6'];
 
+  // Refs for export functionality
+  const barRef = useRef(null);
+  const doughnutRef = useRef(null);
+
+  const exportChartAsPNG = useCallback((ref, filename) => {
+    try {
+      const chart = ref?.current;
+      if (!chart) return alert('Chart not ready');
+      const url = chart.toBase64Image('image/png', 1);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+    } catch (e) {
+      console.error('Export failed', e);
+      alert('Failed to export chart');
+    }
+  }, []);
+
+  // Toggle between stacked / normal bar display for added interactivity
+  const [barMode, setBarMode] = useState('normal');
+  const toggleBarMode = () => setBarMode(m => m === 'normal' ? 'stacked' : 'normal');
+
+  // Skeleton state (briefly show skeleton if loading or data just empty)
+  const showStudentSkeleton = loading && (studentsPerDept.counts || []).length === 0;
+  const showFacultySkeleton = loading && (facultyDistribution || []).length === 0;
+
   const studentsPerDeptChart = useMemo(() => {
     const labels = (studentsPerDept.counts || []).map(i => i.name);
     const data = (studentsPerDept.counts || []).map(i => i.count);
@@ -400,35 +499,57 @@ const Dashboard = () => {
           label: 'Students',
           data,
           backgroundColor: labels.map((_, idx) => chartPalette[idx % chartPalette.length]),
-          borderRadius: 8,
+          borderColor: '#ffffff',
+          borderWidth: 2,
+          hoverBackgroundColor: labels.map((_, idx) => chartPalette[(idx + 1) % chartPalette.length]),
+          borderRadius: 10,
           borderSkipped: false,
+          maxBarThickness: 42,
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: { duration: 900, easing: 'easeOutQuart' },
         plugins: {
           legend: { display: false },
-          title: { display: true, text: 'Students per Department', color: '#111827', font: { size: 14, weight: 'bold' } }
+          title: { display: true, text: 'Students per Department', color: '#111827', font: { size: 15, weight: 'bold' } },
+          tooltip: {
+            backgroundColor: 'rgba(17,24,39,0.9)',
+            titleFont: { size: 13, weight: '600' },
+            bodyFont: { size: 12 },
+            padding: 10,
+            cornerRadius: 8,
+            displayColors: false,
+            callbacks: {
+              label: (ctx) => `Students: ${ctx.parsed.y}`
+            }
+          },
+          barValueLabels: { show: true, fontSize: 11, color: '#111827' },
+          softShadow: { blur: 14, offsetY: 8, color: 'rgba(0,0,0,0.12)' }
         },
         scales: {
           x: {
-            ticks: { color: '#6b7280' },
-            grid: { display: false }
+            ticks: { color: '#6b7280', font: { size: 11 } },
+            grid: { display: false },
+            title: { display: false }
           },
           y: {
-            ticks: { color: '#6b7280', precision: 0 },
-            grid: { color: 'rgba(0,0,0,0.05)' }
+            ticks: { color: '#6b7280', precision: 0, font: { size: 11 } },
+            grid: { color: 'rgba(0,0,0,0.06)', drawBorder: false },
+            border: { display: false }
           }
-        }
+        },
+        interaction: { intersect: false, mode: 'index' }
       }
     };
-  }, [studentsPerDept, chartPalette]);
+  }, [studentsPerDept, chartPalette, barMode]);
 
   const facultyDistributionChart = useMemo(() => {
     const top = (facultyDistribution || []).slice(0, 12); // cap slices for clarity
     const labels = top.map(i => i.name);
     const data = top.map(i => i.count);
+    const totalFaculty = data.reduce((a,b) => a + b, 0);
     return {
       data: {
         labels,
@@ -436,19 +557,68 @@ const Dashboard = () => {
           label: 'Faculty',
           data,
           backgroundColor: labels.map((_, idx) => chartPalette[idx % chartPalette.length]),
-          borderWidth: 1,
+          borderWidth: 2,
+          borderColor: '#fff',
+          hoverOffset: 10,
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        cutout: '55%',
+        animation: { duration: 900, easing: 'easeOutQuart' },
         plugins: {
-          legend: { position: 'bottom', labels: { color: '#374151' } },
-          title: { display: true, text: 'Faculty Distribution', color: '#111827', font: { size: 14, weight: 'bold' } }
+          legend: { position: 'bottom', labels: { color: '#374151', boxWidth: 14, padding: 16 } },
+          title: { display: true, text: 'Faculty Distribution', color: '#111827', font: { size: 15, weight: 'bold' } },
+          tooltip: {
+            backgroundColor: 'rgba(17,24,39,0.9)',
+            titleFont: { size: 13, weight: '600' },
+            bodyFont: { size: 12 },
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              label: (ctx) => `${ctx.label}: ${ctx.parsed} faculty`
+            }
+          },
+          doughnutCenterText: { text: totalFaculty, subText: 'Faculty', fontSize: 24, subFontSize: 12, color: '#111827', subColor: '#6b7280' },
+          softShadow: { blur: 18, offsetY: 10, color: 'rgba(0,0,0,0.15)' }
         }
       }
     };
   }, [facultyDistribution, chartPalette]);
+
+  // NEW: Derived quick insights for dashboard summary cards
+  const dashboardInsights = useMemo(() => {
+    try {
+      const largestDept = (() => {
+        const counts = studentsPerDept.counts || [];
+        if (!counts.length) return null;
+        return counts.reduce((max, cur) => cur.count > (max?.count || 0) ? cur : max, counts[0]);
+      })();
+      const smallestDept = (() => {
+        const counts = (studentsPerDept.counts || []).filter(c => c.count > 0);
+        if (!counts.length) return null;
+        return counts.reduce((min, cur) => cur.count < (min?.count || Infinity) ? cur : min, counts[0]);
+      })();
+      const ratioSF = faculty.length ? (students.length / faculty.length) : 0;
+      const latestActivity = activities[0] || null;
+      // Archived years count from localStorage
+      let archivedYearsCount = 0;
+      try {
+        const map = JSON.parse(localStorage.getItem('settings_academic_year_statuses') || '{}');
+        archivedYearsCount = Object.values(map).filter(v => String(v).toLowerCase() === 'archived').length;
+      } catch (_) {}
+      return {
+        largestDept,
+        smallestDept,
+        ratioSF: ratioSF ? ratioSF.toFixed(1) : '—',
+        latestActivity,
+        archivedYearsCount
+      };
+    } catch (err) {
+      return { largestDept: null, smallestDept: null, ratioSF: '—', latestActivity: null, archivedYearsCount: 0 };
+    }
+  }, [studentsPerDept, students, faculty, activities]);
 
   // Stats cards (must return an array, not an object)
   const stats = useMemo(() => ([
@@ -503,46 +673,69 @@ const Dashboard = () => {
   // State to manage academic year status changes
   const [academicYearsState, setAcademicYears] = useState([]);
   
-  // Initialize academicYearsState when academicYears changes, using statuses from Settings
-  useEffect(() => {
-    if (academicYears.length) {
-      // Try to load saved statuses from localStorage
-      let savedStatuses = {};
-      try {
-        const saved = localStorage.getItem('settings_academic_year_statuses');
-        savedStatuses = saved ? JSON.parse(saved) : {};
-      } catch (error) {
-        console.error('Error loading academic year statuses from localStorage:', error);
-      }
-      
-      // Apply saved statuses to the calculated academic years
-      const yearsWithSavedStatus = academicYears.map(year => ({
-        ...year,
-        // If we have a saved status for this year, use it; otherwise keep the calculated status
-        status: savedStatuses[year.year] || year.status
-      }));
-      
-      setAcademicYears(yearsWithSavedStatus);
+  // Helper: consistent descending sort (e.g., 2024-2025 by first year)
+  const sortAcademicYearsDesc = useCallback((arr) => {
+    return [...(arr || [])].sort((a, b) => {
+      const ya = (a?.year || '').match(/\d{4}/g) || [];
+      const yb = (b?.year || '').match(/\d{4}/g) || [];
+      if (ya.length && yb.length) return parseInt(yb[0]) - parseInt(ya[0]);
+      return String(a?.year || '').localeCompare(String(b?.year || ''));
+    });
+  }, []);
+  
+  // Build union of years from Students-derived list and Settings statuses (localStorage)
+  const rebuildAcademicYearsState = useCallback(() => {
+    let savedStatuses = {};
+    try {
+      const saved = localStorage.getItem('settings_academic_year_statuses');
+      savedStatuses = saved ? JSON.parse(saved) : {};
+    } catch (error) {
+      console.error('Error loading academic year statuses from localStorage:', error);
     }
-  }, [academicYears]);
+
+    // Start with years derived from students
+    const byKey = new Map();
+    (academicYears || []).forEach(y => {
+      const merged = { ...y };
+      if (savedStatuses[y.year]) merged.status = savedStatuses[y.year];
+      byKey.set(y.year, merged);
+    });
+
+    // Add years that exist only in Settings (no students yet)
+    Object.keys(savedStatuses || {}).forEach((key) => {
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          year: key,
+          status: savedStatuses[key],
+          students: 0,
+          courses: []
+        });
+      }
+    });
+
+    const union = Array.from(byKey.values());
+    setAcademicYears(sortAcademicYearsDesc(union));
+  }, [academicYears, sortAcademicYearsDesc]);
+  
+  // Initialize/refresh academicYearsState when academicYears list or statuses change
+  useEffect(() => {
+    rebuildAcademicYearsState();
+  }, [rebuildAcademicYearsState]);
 
   // Listen for Settings updates to AY statuses and refresh mapping
   useEffect(() => {
-    const onStatusUpdated = (e) => {
-      // Reload map and update in place
-      try {
-        const saved = JSON.parse(localStorage.getItem('settings_academic_year_statuses') || '{}');
-        setAcademicYears(prev => (prev || []).map(y => ({
-          ...y,
-          status: saved[y.year] || y.status
-        })));
-      } catch (err) {
-        console.error('Failed to refresh AY statuses from settings:', err);
-      }
-    };
+    const onStatusUpdated = () => rebuildAcademicYearsState();
+    const onYearAdded = () => rebuildAcademicYearsState();
+    const onYearDeleted = () => rebuildAcademicYearsState();
     window.addEventListener('academicYearStatusUpdated', onStatusUpdated);
-    return () => window.removeEventListener('academicYearStatusUpdated', onStatusUpdated);
-  }, []);
+    window.addEventListener('academicYearAdded', onYearAdded);
+    window.addEventListener('academicYearDeleted', onYearDeleted);
+    return () => {
+      window.removeEventListener('academicYearStatusUpdated', onStatusUpdated);
+      window.removeEventListener('academicYearAdded', onYearAdded);
+      window.removeEventListener('academicYearDeleted', onYearDeleted);
+    };
+  }, [rebuildAcademicYearsState]);
 
   // NEW: Function to add an activity to the activities list
   const addActivity = useCallback((type, description, entity = null) => {
@@ -869,6 +1062,27 @@ const Dashboard = () => {
     console.log('Real student event dispatched successfully');
   };
 
+  // Admin quick actions helpers
+  const go = (path) => { try { window.location.href = path; } catch (_) {} };
+  const clearLocalCaches = () => {
+    try {
+      const keys = [
+        'dashboard_activities',
+        'settings_academic_year_statuses',
+        'settings_academic_year_statuses_prev',
+        'studentsCustomYears',
+        'facultyCustomYears',
+        'studentsArchivedYears',
+        'facultyArchivedYears'
+      ];
+      keys.forEach(k => localStorage.removeItem(k));
+      addActivity('system', 'Local caches cleared by admin');
+      alert('Local caches cleared. Some views may refresh on next load.');
+    } catch (e) {
+      console.error('Failed clearing local caches', e);
+    }
+  };
+
   return (
     <div className="dashboard-root">
       <div className="dashboard-banner">
@@ -926,230 +1140,301 @@ const Dashboard = () => {
       
       {error && <div className="dashboard-error">{error}</div>}
 
-      <div className="dashboard-stats-row">
-        {(Array.isArray(stats) ? stats : []).map((stat, i) => (
-          <div className="dashboard-stat-card" key={i}>
-            <div className="dashboard-stat-label">{stat.label}</div>
-            <div className="dashboard-stat-value">{loading ? '...' : stat.value}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="dashboard-info-row">
-        <div className="dashboard-info-card dashboard-students">
-          <div className="dashboard-info-label">Avg Students per Department</div>
-          <div className="dashboard-info-main">
-            {loading ? '...' : studentsPerDept.avg}
-          </div>
-          <div className="dashboard-info-sub">
-            {loading ? 'Loading...' : 
-             `${studentsPerDept.total} students across ${departments.length} programs`}
-          </div>
-        </div>
-
-        <div className="dashboard-info-card dashboard-faculty">
-          <div className="dashboard-info-label">Faculty per Department</div>
-          <div className="dashboard-info-main dashboard-info-main-avg">
-            {loading ? '...' : `Avg ${facultyPerDept.avg}`}
-          </div>
-          <div className="dashboard-info-sub">
-            {loading ? 'Loading...' : 
-             `${facultyPerDept.total} faculty across ${departments.length} programs`}
-          </div>
-        </div>
-      </div>
-
-      <div className="dashboard-tabs">
-        {['Programs', 'Faculty Distribution', 'Academic Years', 'Recent Activities'].map(tabName => (
-          <button
-            key={tabName}
-            className={tab === tabName ? 'dashboard-tab active' : 'dashboard-tab'}
-            onClick={(e) => {
-              e.preventDefault(); // Prevent default button behavior
-              setTab(tabName);
-            }}
-          >
-            {tabName}
-          </button>
-        ))}
-      </div>
-
-      {/* TABS CONTENT */}
-      {tab === 'Programs' && (
-        <div className="dashboard-program-overview">
-          <div className="prog-header">
-            <div className="prog-title">Program Overview</div>
-            <div className="prog-sub">Students and courses by academic program</div>
-          </div>
-
-          {(loading ? [] : programOverview).map((prog, i) => {
-            return (
-              <div className="prog-card" key={prog.id}>
-                <div className="prog-card-head">
-                  <div className="prog-name">{prog.name}</div>
-                  <div className="prog-percent">{prog.percent}%</div>
-                </div>
-                <div className="prog-meta">
-                  {prog.students} students · {prog.courses} courses
-                </div>
-                <div className="prog-track">
-                  <div
-                    className="prog-fill"
-                    style={{ width: `${prog.percent}%`, background: prog.color }}
-                  />
-                </div>
+      {/* NEW LAYOUT: Two-column responsive grid */}
+      <div
+        className="dashboard-main-grid"
+        style={{
+          display: 'flex',
+          gap: 24,
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+          width: '100%',
+          marginTop: 20
+        }}
+      >
+        {/* LEFT COLUMN */}
+        <div style={{ flex: '1 1 620px', minWidth: 320 }}>
+          {/* Stats row */}
+          <div className="dashboard-stats-row" style={{ marginBottom: 20 }}>
+            {(Array.isArray(stats) ? stats : []).map((stat, i) => (
+              <div className="dashboard-stat-card" key={i}>
+                <div className="dashboard-stat-label">{stat.label}</div>
+                <div className="dashboard-stat-value">{loading ? '...' : stat.value}</div>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      {tab === 'Faculty Distribution' && (
-        <div className="dashboard-program-overview">
-          <div className="prog-header">
-            <div className="prog-title">Faculty Distribution by Department</div>
-            <div className="prog-sub">Number of faculty members in each academic program</div>
+            ))}
           </div>
 
-          {(loading ? [] : facultyDistribution).map((row, i) => {
-            return (
-              <div className="prog-card" key={row.id || row.name || i}>
-                <div className="prog-card-head">
-                  <div className="prog-name">{row.name}</div>
-                  <div className="prog-percent">{row.percent}%</div>
-                </div>
-                <div className="prog-meta">{row.count} faculty</div>
-                <div className="prog-track">
-                  <div
-                    className="prog-fill"
-                    style={{ width: `${row.width}%`, background: row.color }}
-                  />
-                </div>
+          {/* Info cards (averages) */}
+            <div className="dashboard-info-row" style={{ marginBottom: 20 }}>
+              <div className="dashboard-info-card dashboard-students">
+                <div className="dashboard-info-label">Avg Students / Dept</div>
+                <div className="dashboard-info-main">{loading ? '...' : studentsPerDept.avg}</div>
+                <div className="dashboard-info-sub">{loading ? 'Loading...' : `${studentsPerDept.total} students · ${departments.length} programs`}</div>
               </div>
-            );
-          })}
-        </div>
-      )}
+              <div className="dashboard-info-card dashboard-faculty">
+                <div className="dashboard-info-label">Faculty / Dept</div>
+                <div className="dashboard-info-main dashboard-info-main-avg">{loading ? '...' : `Avg ${facultyPerDept.avg}`}</div>
+                <div className="dashboard-info-sub">{loading ? 'Loading...' : `${facultyPerDept.total} faculty · ${departments.length} programs`}</div>
+              </div>
+            </div>
 
-      {tab === 'Academic Years' && (
-        <div className="dashboard-program-overview">
-          <div className="prog-header">
-            <div className="prog-title">Academic Year Statistics</div>
-            <div className="prog-sub">Student enrollment and course completion by academic year</div>
+          {/* Tabs */}
+          <div className="dashboard-tabs" style={{ marginBottom: 12 }}>
+            {['Programs', 'Faculty Distribution', 'Academic Years', 'Recent Activities'].map(tabName => (
+              <button
+                key={tabName}
+                className={tab === tabName ? 'dashboard-tab active' : 'dashboard-tab'}
+                onClick={(e) => { e.preventDefault(); setTab(tabName); }}
+              >
+                {tabName}
+              </button>
+            ))}
           </div>
 
-          {loading ? (
-            <div className="ay-loading">Loading academic years...</div>
-          ) : academicYearsState.length === 0 ? (
-            <div className="ay-empty">No academic years data available</div>
-          ) : (
-            academicYearsState.map(year => (
-              <div className="prog-card" key={year.year}>
-                <div className="prog-card-head">
-                  <div className="prog-name">{year.year}</div>
-                  <span 
-                    className={`ay-status-badge ${String(year.status || '').toLowerCase()}`}
-                    title={`Status: ${year.status}`}
-                    style={{ cursor: 'default' }}
-                  >
-                    {String(year.status).toLowerCase() === 'active' && (<><span className="status-icon">●</span>Active</>)}
-                    {String(year.status).toLowerCase() === 'completed' && (<><span className="status-icon">✓</span>Completed</>)}
-                    {String(year.status).toLowerCase() === 'inactive' && (<><span className="status-icon">–</span>Inactive</>)}
-                    {String(year.status).toLowerCase() === 'archived' && (<><span className="status-icon">▣</span>Archived</>)}
-                  </span>
+          {/* Tab content */}
+          <div className="dashboard-tab-content" style={{ minHeight: 200 }}>
+            {tab === 'Programs' && (
+              <div className="dashboard-program-overview">
+                <div className="prog-header">
+                  <div className="prog-title">Program Overview</div>
+                  <div className="prog-sub">Students and courses by academic program</div>
                 </div>
-                <div className="prog-meta">
-                  {year.students} students enrolled · {year.courses.length} courses offered
+                {(loading ? [] : programOverview).map(prog => (
+                  <div className="prog-card" key={prog.id}>
+                    <div className="prog-card-head">
+                      <div className="prog-name">{prog.name}</div>
+                      <div className="prog-percent">{prog.percent}%</div>
+                    </div>
+                    <div className="prog-meta">{prog.students} students · {prog.courses} courses</div>
+                    <div className="prog-track"><div className="prog-fill" style={{ width: `${prog.percent}%`, background: prog.color }} /></div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {tab === 'Faculty Distribution' && (
+              <div className="dashboard-program-overview">
+                <div className="prog-header">
+                  <div className="prog-title">Faculty Distribution</div>
+                  <div className="prog-sub">Faculty members per department</div>
                 </div>
+                {(loading ? [] : facultyDistribution).map(row => (
+                  <div className="prog-card" key={row.id || row.name}>
+                    <div className="prog-card-head">
+                      <div className="prog-name">{row.name}</div>
+                      <div className="prog-percent">{row.percent}%</div>
+                    </div>
+                    <div className="prog-meta">{row.count} faculty</div>
+                    <div className="prog-track"><div className="prog-fill" style={{ width: `${row.width}%`, background: row.color }} /></div>
+                  </div>
+                ))}
               </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {tab === 'Recent Activities' && (
-        <div className="dashboard-program-overview">
-          <div className="prog-header">
-            <div className="prog-title">Recent Activities</div>
-            <div className="prog-sub">Latest updates from your institution</div>
-          </div>
-          
-          <div className="ra-content">
-            {activities.length === 0 ? (
-              <div className="ra-empty">
-                <div className="ra-empty-icon">🔔</div>
-                <div className="ra-empty-title">No activities yet</div>
-                <div className="ra-empty-desc">Activities will appear here when changes are made to students, faculty, courses, or departments</div>
-              </div>
-            ) : (
-              <>
-                <div className="ra-list">
-                  {activities.map(activity => (
-                    <div className="ra-item" key={activity.id}>
-                      <div 
-                        className="ra-icon" 
-                        style={{ backgroundColor: getActivityColor(activity.type) }}
-                      >
-                        {getActivityIcon(activity.type)}
+            )}
+            {tab === 'Academic Years' && (
+              <div className="dashboard-program-overview">
+                <div className="prog-header">
+                  <div className="prog-title">Academic Year Statistics</div>
+                  <div className="prog-sub">Enrollment & offerings per year</div>
+                </div>
+                {loading ? (
+                  <div className="ay-loading">Loading academic years...</div>
+                ) : academicYearsState.length === 0 ? (
+                  <div className="ay-empty">No academic years data available</div>
+                ) : (
+                  academicYearsState.map(year => (
+                    <div className="prog-card" key={year.year}>
+                      <div className="prog-card-head">
+                        <div className="prog-name">{year.year}</div>
+                        <span className={`ay-status-badge ${String(year.status || '').toLowerCase()}`} title={`Status: ${year.status}`} style={{ cursor: 'default' }}>
+                          {String(year.status).toLowerCase() === 'active' && (<><span className="status-icon">●</span>Active</>)}
+                          {String(year.status).toLowerCase() === 'completed' && (<><span className="status-icon">✓</span>Completed</>)}
+                          {String(year.status).toLowerCase() === 'inactive' && (<><span className="status-icon">–</span>Inactive</>)}
+                          {String(year.status).toLowerCase() === 'archived' && (<><span className="status-icon">▣</span>Archived</>)}
+                        </span>
                       </div>
-                      <div className="ra-details">
-                        <div className="ra-description">{activity.description}</div>
-                        <div className="ra-time">{formatTimeAgo(activity.timestamp)}</div>
+                      <div className="prog-meta">{year.students} students · {year.courses.length} courses</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+            {tab === 'Recent Activities' && (
+              <div className="dashboard-program-overview">
+                <div className="prog-header">
+                  <div className="prog-title">Recent Activities</div>
+                  <div className="prog-sub">Latest institutional updates</div>
+                </div>
+                <div className="ra-content">
+                  {activities.length === 0 ? (
+                    <div className="ra-empty">
+                      <div className="ra-empty-icon">🔔</div>
+                      <div className="ra-empty-title">No activities yet</div>
+                      <div className="ra-empty-desc">Changes to students, faculty, courses, or departments will appear here</div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="ra-list">
+                        {activities.map(activity => (
+                          <div className="ra-item" key={activity.id}>
+                            <div className="ra-icon" style={{ backgroundColor: getActivityColor(activity.type) }}>{getActivityIcon(activity.type)}</div>
+                            <div className="ra-details">
+                              <div className="ra-description">{activity.description}</div>
+                              <div className="ra-time">{formatTimeAgo(activity.timestamp)}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="ra-controls"><button className="ra-button" onClick={clearActivities}>Clear All Activities</button></div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN */}
+        <div style={{ flex: '1 1 380px', minWidth: 300, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          {/* Calendar at the top */}
+          <div className="dashboard-side-section" style={{ background: '#fff', borderRadius: 18, padding: 16, boxShadow: '0 2px 10px rgba(0,0,0,.06)' }}>
+            <div className="prog-header" style={{ marginBottom: 12 }}>
+              <div className="prog-title">Calendar</div>
+              <div className="prog-sub">Activity days are marked</div>
+            </div>
+            <CalendarWidget activities={activities} />
+          </div>
+          {/* Charts below calendar */}
+          <div className="dashboard-side-section" style={{ background: '#fff', borderRadius: 18, padding: 16, boxShadow: '0 2px 10px rgba(0,0,0,.06)' }}>
+            <div className="prog-header" style={{ marginBottom: 12 }}>
+              <div className="prog-title">Charts</div>
+              <div className="prog-sub">Students & faculty overview</div>
+            </div>
+            <div className="dashboard-charts-grid" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+              <div className="chart-card" style={{ minHeight: 260 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>{barMode === 'normal' ? 'Standard view' : 'Stacked (simulated)'}</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={toggleBarMode} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>Toggle Mode</button>
+                    <button onClick={() => exportChartAsPNG(barRef, 'students_per_department.png')} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>Export PNG</button>
+                  </div>
+                </div>
+                {showStudentSkeleton ? (
+                  <div style={{ height: 240, display: 'grid', gridTemplateColumns: `repeat(${Math.max((studentsPerDept?.counts || []).length, 5)},1fr)`, alignItems: 'end', gap: 6 }}>
+                    {Array.from({ length: Math.max((studentsPerDept?.counts || []).length, 5) }).map((_, i) => (
+                      <div key={i} style={{ background: 'linear-gradient(180deg,#f1f5f9,#e2e8f0)', height: `${20 + (i % 5) * 10}px`, borderRadius: 6, opacity: .6, animation: 'pulse 1.2s ease-in-out infinite' }} />
+                    ))}
+                  </div>
+                ) : ((studentsPerDept?.counts || []).length === 0 ? (
+                  <div className="chart-empty">No student data</div>
+                ) : (
+                  <div className="chart-canvas" style={{ height: 240 }}>
+                    <Bar ref={barRef} data={studentsPerDeptChart.data} options={studentsPerDeptChart.options} />
+                  </div>
+                ))}
+              </div>
+              <div className="chart-card" style={{ minHeight: 260 }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 6 }}>
+                  <button onClick={() => exportChartAsPNG(doughnutRef, 'faculty_distribution.png')} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer' }}>Export PNG</button>
+                </div>
+                {showFacultySkeleton ? (
+                  <div style={{ height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                    <div style={{ width: 160, height: 160, borderRadius: '50%', background: 'linear-gradient(135deg,#f1f5f9,#e2e8f0)', animation: 'pulse 1.2s ease-in-out infinite' }} />
+                  </div>
+                ) : ((facultyDistribution || []).length === 0 ? (
+                  <div className="chart-empty">No faculty data</div>
+                ) : (
+                  <div className="chart-canvas" style={{ height: 240 }}>
+                    <Doughnut ref={doughnutRef} data={facultyDistributionChart.data} options={facultyDistributionChart.options} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* NEW Insights strip below charts */}
+            <div className="dashboard-insights" style={{ marginTop: 20, display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill,minmax(160px,1fr))' }}>
+              <div className="insight-card" style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 14, padding: '12px 14px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', textTransform: 'uppercase', letterSpacing: '.5px' }}>Largest Dept</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>{dashboardInsights.largestDept ? dashboardInsights.largestDept.name : '—'}</div>
+                <div style={{ fontSize: 12, color: '#0c4a6e' }}>{dashboardInsights.largestDept ? `${dashboardInsights.largestDept.count} students` : 'No data'}</div>
+              </div>
+              <div className="insight-card" style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: 14, padding: '12px 14px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#854d0e', textTransform: 'uppercase', letterSpacing: '.5px' }}>Smallest Dept</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>{dashboardInsights.smallestDept ? dashboardInsights.smallestDept.name : '—'}</div>
+                <div style={{ fontSize: 12, color: '#713f12' }}>{dashboardInsights.smallestDept ? `${dashboardInsights.smallestDept.count} students` : 'No data'}</div>
+              </div>
+              <div className="insight-card" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 14, padding: '12px 14px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '.5px' }}>Student:Faculty</div>
+                <div style={{ fontSize: 22, fontWeight: 700, marginTop: 2, color: '#065f46' }}>{dashboardInsights.ratioSF}</div>
+                <div style={{ fontSize: 11, color: '#047857' }}>ratio</div>
+              </div>
+              <div className="insight-card" style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 14, padding: '12px 14px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#6d28d9', textTransform: 'uppercase', letterSpacing: '.5px' }}>Archived Years</div>
+                <div style={{ fontSize: 22, fontWeight: 700, marginTop: 2, color: '#5b21b6' }}>{dashboardInsights.archivedYearsCount}</div>
+                <div style={{ fontSize: 11, color: '#5b21b6' }}>total</div>
+              </div>
+              <div className="insight-card" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 14, padding: '12px 14px' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#1d4ed8', textTransform: 'uppercase', letterSpacing: '.5px' }}>Latest Activity</div>
+                <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: '#1e3a8a', minHeight: 32 }}>
+                  {dashboardInsights.latestActivity ? dashboardInsights.latestActivity.description : 'None yet'}
+                </div>
+                <div style={{ fontSize: 11, color: '#1e3a8a' }}>{dashboardInsights.latestActivity ? formatTimeAgo(dashboardInsights.latestActivity.timestamp) : ''}</div>
+              </div>
+            </div>
+
+            {/* Admin Quick Actions below insights */}
+            <div className="dashboard-quick-actions" style={{ marginTop: 16 }}>
+              <div className="prog-header" style={{ marginBottom: 10 }}>
+                <div className="prog-title">Admin Quick Actions</div>
+                <div className="prog-sub">Jump to common tasks</div>
+              </div>
+              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill,minmax(170px,1fr))' }}>
+                {[
+                  { key: 'students', label: 'Manage Students', sub: 'Add, view, update', icon: '👨‍🎓', action: () => go('/students') },
+                  { key: 'faculty', label: 'Manage Faculty', sub: 'Add, view, update', icon: '👩‍🏫', action: () => go('/faculty') },
+                  { key: 'courses', label: 'Manage Courses', sub: 'Create & edit', icon: '📚', action: () => go('/courses') },
+                  { key: 'programs', label: 'Manage Programs', sub: 'Departments', icon: '🏢', action: () => go('/departments') },
+                  { key: 'settings', label: 'Settings', sub: 'Academic years', icon: '⚙️', action: () => go('/settings') },
+                  { key: 'clear', label: 'Clear Local Cache', sub: 'Force refresh', icon: '🧹', action: () => clearLocalCaches() },
+                ].map((qa) => (
+                  <button
+                    key={qa.key}
+                    onClick={qa.action}
+                    onMouseEnter={() => setHoveredQA(qa.key)}
+                    onMouseLeave={() => setHoveredQA('')}
+                    className="qa-card"
+                    style={{
+                      textAlign: 'left',
+                      borderRadius: 14,
+                      padding: '12px 14px',
+                      background: hoveredQA === qa.key ? 'linear-gradient(180deg,#ffffff, #f1f5f9)' : '#fff',
+                      boxShadow: hoveredQA === qa.key ? '0 10px 18px rgba(0,0,0,.10)' : '0 2px 10px rgba(0,0,0,.06)',
+                      border: '1px solid #e5e7eb',
+                      transition: 'transform .15s ease, box-shadow .15s ease, background .2s ease',
+                      transform: hoveredQA === qa.key ? 'translateY(-2px)' : 'translateY(0)'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: hoveredQA === qa.key ? 'linear-gradient(135deg,#6366f1,#22c55e)' : 'linear-gradient(135deg,#f3f4f6,#e5e7eb)',
+                        boxShadow: hoveredQA === qa.key ? 'inset 0 0 0 1px rgba(255,255,255,.35)' : 'inset 0 0 0 1px rgba(0,0,0,.05)'
+                      }}>
+                        <span style={{ fontSize: 18 }}>{qa.icon}</span>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, color: '#111827', fontSize: 14 }}>{qa.label}</div>
+                        <div style={{ color: '#6b7280', fontSize: 12 }}>{qa.sub}</div>
                       </div>
                     </div>
-                  ))}
-                </div>
-                <div className="ra-controls">
-                  <button 
-                    className="ra-button"
-                    onClick={clearActivities}
-                  >
-                    Clear All Activities
                   </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Charts Section - Always visible */}
-      <div className="dashboard-program-overview">
-        <div className="prog-header">
-          <div className="prog-title">Charts</div>
-          <div className="prog-sub">Visual summaries of students and faculty</div>
-        </div>
-
-        <div className="dashboard-charts-grid">
-          <div className="chart-card">
-            {loading || (studentsPerDept?.counts || []).length === 0 ? (
-              <div className="chart-empty">No student data to display</div>
-            ) : (
-              <div className="chart-canvas">
-                <Bar data={studentsPerDeptChart.data} options={studentsPerDeptChart.options} />
+                ))}
               </div>
-            )}
-          </div>
-
-          <div className="chart-card">
-            {loading || (facultyDistribution || []).length === 0 ? (
-              <div className="chart-empty">No faculty data to display</div>
-            ) : (
-              <div className="chart-canvas">
-                <Doughnut data={facultyDistributionChart.data} options={facultyDistributionChart.options} />
-              </div>
-            )}
+            </div>
           </div>
         </div>
-      </div>
-
-      {/* Bottom Calendar Section */}
-      <div className="dashboard-program-overview">
-        <div className="prog-header">
-          <div className="prog-title">Calendar</div>
-          <div className="prog-sub">Quick glance at this month · activity days are marked</div>
-        </div>
-        <CalendarWidget activities={activities} />
       </div>
     </div>
   );
