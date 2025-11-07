@@ -36,6 +36,12 @@ const Settings = () => {
 	const [restoreConfirmText, setRestoreConfirmText] = useState("");
 	const [restoreInProgress, setRestoreInProgress] = useState(false);
 
+	// Delete confirmation (Academic Year only for now)
+	const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+	const [deleteTarget, setDeleteTarget] = useState(null); // academic year item
+	const [deleteConfirmText, setDeleteConfirmText] = useState("");
+	const [deleteInProgress, setDeleteInProgress] = useState(false);
+
 	// Form states
 	const [courseForm, setCourseForm] = useState({
 		name: '',
@@ -1112,8 +1118,76 @@ const Settings = () => {
 						</svg>
 					)}
 				</button>
+				{type === 'academic_year' && (
+					<button
+						className="action-btn delete"
+						onClick={() => handleDeleteYear(item)}
+						title="Delete Academic Year"
+					>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+							<path d="M3 6h18"/>
+							<path d="M8 6V4h8v2"/>
+							<path d="M10 11v6"/>
+							<path d="M14 11v6"/>
+							<path d="M5 6l1 14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-14"/>
+						</svg>
+					</button>
+				)}
 			</div>
 		);
+	};
+
+	// Open delete confirm for Academic Year
+	const handleDeleteYear = (item) => {
+		if (!item) return;
+		setDeleteTarget(item);
+		setDeleteConfirmText("");
+		setShowDeleteConfirm(true);
+	};
+
+	// Confirm deletion logic
+	const confirmDeleteYear = async () => {
+		if (deleteConfirmText !== 'Delete' || !deleteTarget) return;
+		setDeleteInProgress(true);
+		try {
+			const yearStr = String(deleteTarget.academic_year).replace(/^SY\s*/i, '').trim();
+			// Remove from academicYears state
+			setAcademicYears(prev => prev.filter(y => String(y.academic_year) !== yearStr));
+			// Clean status maps
+			try {
+				const STATUS_KEY = 'settings_academic_year_statuses';
+				const PREV_STATUS_KEY = 'settings_academic_year_statuses_prev';
+				let statusMap = JSON.parse(localStorage.getItem(STATUS_KEY) || '{}');
+				let prevMap = JSON.parse(localStorage.getItem(PREV_STATUS_KEY) || '{}');
+				delete statusMap[yearStr];
+				delete prevMap[yearStr];
+				localStorage.setItem(STATUS_KEY, JSON.stringify(statusMap));
+				localStorage.setItem(PREV_STATUS_KEY, JSON.stringify(prevMap));
+			} catch (_) {}
+			// Remove custom year labels from Students & Faculty custom arrays
+			try {
+				const label = `SY ${yearStr}`;
+				['studentsCustomYears','facultyCustomYears','studentsArchivedYears','facultyArchivedYears'].forEach(key => {
+					try {
+						const list = JSON.parse(localStorage.getItem(key) || '[]');
+						const next = list.filter(v => v !== label);
+						localStorage.setItem(key, JSON.stringify(next));
+					} catch (_) {}
+				});
+			} catch (_) {}
+			// Dispatch deletion event so other pages can react (optional listeners)
+			try {
+				window.dispatchEvent(new CustomEvent('academicYearDeleted', { detail: { year: yearStr } }));
+			} catch (_) {}
+			notifications.add(`Academic Year "${yearStr}" has been deleted.`);
+		} catch (err) {
+			notifications.info('Error: Failed to delete academic year.');
+		} finally {
+			setDeleteInProgress(false);
+			setShowDeleteConfirm(false);
+			setDeleteTarget(null);
+			setDeleteConfirmText('');
+		}
 	};
 
 	const totalCourses = courses.length;
@@ -1155,6 +1229,56 @@ const Settings = () => {
 			</div>
 
 			{/* Stat cards */}
+
+	{/* Delete confirm (typed) Academic Year */}
+	{showDeleteConfirm && (
+		<div
+			className="students-modal-bg"
+			style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500 }}
+			onClick={() => !deleteInProgress && setShowDeleteConfirm(false)}
+		>
+			<div
+				className="students-modal"
+				onClick={(e) => e.stopPropagation()}
+				style={{ background: '#fff', width: '100%', maxWidth: 440, padding: '32px 36px', borderRadius: 22, boxShadow: '0 8px 28px rgba(0,0,0,.18)' }}
+			>
+				<h3 style={{ marginTop: 0, marginBottom: 6 }}>Delete Academic Year</h3>
+				<div style={{ fontSize: 14, lineHeight: 1.5, color: '#374151', marginBottom: 18 }}>
+					<b>{deleteTarget?.academic_year}</b>
+					<br /><br />
+					This will permanently remove this academic year, its archived status, and any custom folders referencing it. Other records that may reference this label will not be altered.
+					<br /><br />
+					Type <code style={{ background: '#f3f4f6', padding: '2px 4px', borderRadius: 4 }}>Delete</code> to confirm.
+				</div>
+				<input
+					autoFocus
+					type="text"
+					placeholder='Type "Delete" to confirm'
+					value={deleteConfirmText}
+					onChange={(e) => setDeleteConfirmText(e.target.value)}
+					style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid #d1d5db', marginBottom: 20, fontSize: 14 }}
+					disabled={deleteInProgress}
+				/>
+				<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+					<button type="button" onClick={() => setShowDeleteConfirm(false)} disabled={deleteInProgress} style={{ background: '#e5e7eb', border: 'none', padding: '8px 18px', borderRadius: 10, fontWeight: 600 }}>
+						Cancel
+					</button>
+					<button
+						type="button"
+						onClick={confirmDeleteYear}
+						disabled={deleteConfirmText !== 'Delete' || deleteInProgress}
+						style={{
+							background: deleteConfirmText === 'Delete' && !deleteInProgress ? '#dc2626' : '#fca5a5',
+							color: '#fff', border: 'none', padding: '8px 22px', borderRadius: 10, fontWeight: 600,
+							cursor: deleteConfirmText === 'Delete' && !deleteInProgress ? 'pointer' : 'not-allowed'
+						}}
+					>
+						{deleteInProgress ? 'Deleting...' : 'Delete'}
+					</button>
+				</div>
+			</div>
+		</div>
+	)}
 
 	{/* Archive confirm (typed) for AY/Course/Department */}
 	{showArchiveConfirm && (

@@ -126,6 +126,9 @@ const Students = () => {
   // Read-only view modal
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [viewStudent, setViewStudent] = useState(null);
+  // Full photo preview state
+  const [photoPreviewOpen, setPhotoPreviewOpen] = useState(false);
+  const [photoPreviewSrcFull, setPhotoPreviewSrcFull] = useState(null);
   const isInteractiveClick = (target) => {
     try {
       return !!(target.closest && target.closest('button, a, input, label, select, textarea, [role="button"], .students-action-btn, .students-folder-menu-btn'));
@@ -2523,7 +2526,17 @@ const Students = () => {
               <button onClick={closeViewStudent} style={{ background: '#e5e7eb', border: 'none', padding: '6px 10px', borderRadius: 8, fontWeight: 700 }}>Close</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '96px 1fr', gap: 16, alignItems: 'center', marginBottom: 16 }}>
-              <img src={viewStudent.photo_url || viewStudent.avatar || '/avatar1.png'} alt={viewStudent.first_name + ' ' + viewStudent.last_name} style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', border: '2px solid #e5e7eb' }} />
+              <img
+                src={viewStudent.photo_url || viewStudent.avatar || '/avatar1.png'}
+                alt={viewStudent.first_name + ' ' + viewStudent.last_name}
+                style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', border: '2px solid #e5e7eb', cursor: (viewStudent.photo_url || viewStudent.avatar) ? 'zoom-in' : 'default' }}
+                onClick={() => {
+                  const full = viewStudent.photo_url || viewStudent.avatar;
+                  if (!full) return;
+                  setPhotoPreviewSrcFull(full);
+                  setPhotoPreviewOpen(true);
+                }}
+              />
               <div>
                 <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{viewStudent.first_name} {viewStudent.last_name}</div>
                 <div style={{ color: '#6b7280' }}>ID: {viewStudent.id}</div>
@@ -2569,6 +2582,25 @@ const Students = () => {
                 <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 10, padding: '10px 12px', minHeight: 40 }}>{viewStudent.updated_at ? new Date(viewStudent.updated_at).toLocaleString() : '—'}</div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {photoPreviewOpen && photoPreviewSrcFull && (
+        <div
+          className="students-modal-bg"
+          onClick={() => setPhotoPreviewOpen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000 }}
+        >
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
+            <img
+              src={photoPreviewSrcFull}
+              alt={viewStudent?.first_name + ' ' + viewStudent?.last_name + ' full photo'}
+              style={{ maxWidth: '90vw', maxHeight: '90vh', objectFit: 'contain', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,.5)' }}
+            />
+            <button
+              onClick={() => setPhotoPreviewOpen(false)}
+              style={{ position: 'absolute', top: 8, right: 8, background: '#111827', color: '#fff', border: 'none', padding: '8px 14px', fontWeight: 600, borderRadius: 8, cursor: 'pointer' }}
+            >Close</button>
           </div>
         </div>
       )}
