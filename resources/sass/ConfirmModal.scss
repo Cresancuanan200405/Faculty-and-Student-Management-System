@@ -1,0 +1,65 @@
+/* Centered modal overlay */
+.cm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.cm-modal {
+  width: min(92vw, 420px);
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  padding: 1rem;
+}
+
+.cm-header {
+  margin-bottom: 0.25rem;
+}
+
+.cm-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.cm-body {
+  color: #334155;
+  font-size: 0.95rem;
+  margin-bottom: 0.75rem;
+}
+
+.cm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.cm-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.55rem 0.9rem;
+}
+
+.cm-btn-secondary {
+  background: #f1f5f9;
+  border-color: rgba(226, 232, 240, 0.9);
+  color: #0f172a;
+}
+.cm-btn-secondary:hover { background: #e2e8f0; }
+
+.cm-btn-danger {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+}
+.cm-btn-danger:hover { background: #dc2626; border-color: #dc2626; }

@@ -8,6 +8,17 @@ use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
 class Kernel extends ConsoleKernel
 {
     /**
+<<<<<<< HEAD
+=======
+     * The Artisan commands provided by your application.
+     *
+     * @var array
+     */
+    protected $commands = [
+        \App\Console\Commands\InsertTestStudent::class,
+    ];
+    /**
+>>>>>>> bcad6eccef0fe354b18d40a5b4f31d4ee11b5ff5
      * Define the application's command schedule.
      *
      * @param  \Illuminate\Console\Scheduling\Schedule  $schedule

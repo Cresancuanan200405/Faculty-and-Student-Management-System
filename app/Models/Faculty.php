@@ -1,0 +1,39 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class Faculty extends Model
+{
+    use HasFactory, SoftDeletes;
+
+    protected $fillable = [
+        'first_name',
+        'last_name',
+        'email',
+        'gender',
+        'birthdate',
+        'phone',
+        'department',
+        'program',
+        'assigned_program',
+        'dean_department',
+        'academic_year',
+        'status',
+        'photo_path',
+    ];
+
+    protected $appends = [
+        'photo_url',
+    ];
+
+    public function getPhotoUrlAttribute(): ?string
+    {
+        return $this->photo_path
+            ? asset('storage/' . ltrim($this->photo_path, '/'))
+            : null;
+    }
+}

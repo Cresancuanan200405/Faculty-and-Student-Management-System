@@ -1,16 +1,56 @@
-// filepath: hinayon-imo/resources/sass/app.scss
-// Fonts
-@import url('https://fonts.googleapis.com/css?family=Nunito');
+@import "~bootstrap/scss/bootstrap";
 
-// Variables
-@import '_variables';
+@import "Auth.scss";
 
-// Bootstrap
-@import '~bootstrap/scss/bootstrap';
+@import "Dashboard.scss";
 
-@import './home.scss';
-@import './aboutus.scss';
-@import './contactus.scss';
-@import './navbar.scss';
-@import './login.scss';
-@import './contactdisplay.scss';
+@import "Students.scss";
+
+@import "Profile.scss";
+
+@import "Reports.scss";
+
+body {
+  background-color: #f8f9fa;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.login-container {
+  background: linear-gradient(135deg, #74ebd5 0%, #9face6 100%);
+}
+
+.card {
+  border-radius: 1rem;
+}
+
+body.theme-dark {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+body.theme-dark a {
+  color: #93c5fd;
+}
+
+body.theme-dark .main-content {
+  background-color: #0f172a;
+}
+
+body.theme-dark .card {
+  background-color: #111c2f;
+  color: #e2e8f0;
+  border: 1px solid #1f2937;
+}
+
+body.theme-dark input,
+body.theme-dark select,
+body.theme-dark textarea {
+  background-color: #0b1729;
+  color: #e2e8f0;
+  border-color: #1f2937;
+}
+
+body.theme-dark input::placeholder,
+body.theme-dark textarea::placeholder {
+  color: #64748b;
+}
