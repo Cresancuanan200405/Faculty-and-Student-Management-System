@@ -191,6 +191,10 @@ const Faculty = () => {
     } catch (_) { return false; }
   };
 
+  // View / Table mode + sorting (parity with Students.js)
+  const [viewMode, setViewMode] = useState('folder'); // 'folder' | 'table'
+  const [tableSort, setTableSort] = useState({ field: 'last_name', direction: 'asc' });
+
   // Academic Year statuses from Settings (Active, Inactive, Completed, Archived)
   const [ayStatuses, setAyStatuses] = useState(() => {
     try { return JSON.parse(localStorage.getItem('settings_academic_year_statuses') || '{}'); } catch { return {}; }
@@ -258,6 +262,24 @@ const Faculty = () => {
     // Default to Active if not explicitly set in Settings (only block when marked Inactive/Completed)
     return ayStatuses[key] || 'Active';
   }, [ayStatuses, getYearKey]);
+
+  // Year helpers defined early to avoid TDZ/runtime errors
+  function normalizeYearLabel(raw) {
+    if (!raw) return "";
+    let yr = String(raw).trim().replace(/^SY\s*/i, "").replace(/[–—]/g, '-');
+    yr = yr.replace(/\s*-\s*/g, '-');
+    if (/^\d{4}-\d{4}$/.test(yr)) return `SY ${yr}`;
+    if (/^\d{4}$/.test(yr)) {
+      const s = Number(yr);
+      return `SY ${s}-${s + 1}`;
+    }
+    return `SY ${yr}`.trim();
+  }
+
+  function matchesSelectedYear(selectedLabel, rawYear) {
+    if (!selectedLabel) return true;
+    return normalizeYearLabel(selectedLabel) === normalizeYearLabel(rawYear);
+  }
 
   useEffect(() => {
     const onStatusUpdated = () => {
@@ -864,6 +886,14 @@ const Faculty = () => {
   };
 
   const getCurrentVisibleList = useCallback(() => {
+    // Table view: show faculty filtered by top bar Year/Department and search using robust normalization
+    if (viewMode === 'table') {
+      return filteredFaculty.filter(mem => {
+        if (!matchesSelectedYear(selectedYear, mem.academic_year)) return false;
+        if (selectedDept && (mem.department || '').trim().toLowerCase() !== selectedDept.trim().toLowerCase()) return false;
+        return true;
+      });
+    }
     // Determine current list in the detailed table or search
     if (selectedYear && (
       (!departmentSubfolders[selectedDept] && selectedDept) ||
@@ -877,7 +907,46 @@ const Faculty = () => {
       return filteredFaculty;
     }
     return [];
-  }, [currentFacultyList, filteredFaculty, isSearchActive, selectedDept, selectedProgram, selectedSubDept, selectedYear, showArchived]);
+  }, [currentFacultyList, filteredFaculty, isSearchActive, selectedDept, selectedProgram, selectedSubDept, selectedYear, showArchived, viewMode]);
+
+  // Sorting helpers for table view
+  const visibleTableFaculty = useMemo(() => {
+    return filteredFaculty.filter(mem => {
+      if (!matchesSelectedYear(selectedYear, mem.academic_year)) return false;
+      if (selectedDept && (mem.department || '').trim().toLowerCase() !== selectedDept.trim().toLowerCase()) return false;
+      return true;
+    });
+  }, [filteredFaculty, selectedYear, selectedDept]);
+
+  const sortedTableFaculty = useMemo(() => {
+    const arr = [...visibleTableFaculty];
+    const { field, direction } = tableSort;
+    const dir = direction === 'asc' ? 1 : -1;
+    const val = (mem) => {
+      switch(field) {
+        case 'name': return `${(mem.last_name||'').toLowerCase()} ${(mem.first_name||'').toLowerCase()}`.trim();
+        case 'department': return (mem.department||'').toLowerCase();
+        case 'program': return (mem.program||'').toLowerCase();
+        case 'assigned_program': return (mem.assigned_program||'').toLowerCase();
+  case 'academic_year': return (normalizeYearLabel(mem.academic_year)||'').toLowerCase();
+        case 'status': return (mem.status||'').toLowerCase();
+        case 'updated_at': return mem.updated_at ? new Date(mem.updated_at).getTime() : 0;
+        case 'id': return Number(mem.id) || 0;
+        default: return `${(mem.last_name||'').toLowerCase()} ${(mem.first_name||'').toLowerCase()}`.trim();
+      }
+    };
+    arr.sort((a,b) => {
+      const va = val(a); const vb = val(b);
+      if (va < vb) return -1 * dir;
+      if (va > vb) return 1 * dir;
+      return 0;
+    });
+    return arr;
+  }, [visibleTableFaculty, tableSort]);
+
+  const toggleSortField = (field) => {
+    setTableSort(prev => prev.field === field ? { field, direction: prev.direction === 'asc' ? 'desc' : 'asc' } : { field, direction: 'asc' });
+  };
 
   const toggleSelectAll = () => {
     const list = getCurrentVisibleList();
@@ -978,7 +1047,7 @@ const Faculty = () => {
 
   const countByPositionProgram = (yearLabel, position, program) => {
     return (faculty || []).filter(mem =>
-      toYearLabel(mem.academic_year) === yearLabel &&
+      normalizeYearLabel(mem.academic_year) === yearLabel &&
       norm(mem.program) === norm(position) &&
       norm(mem.assigned_program) === norm(program)
     ).length;
@@ -986,30 +1055,30 @@ const Faculty = () => {
 
   const countDeansByProgram = (yearLabel, programName) => {
     return (faculty || []).filter(mem =>
-      toYearLabel(mem.academic_year) === yearLabel &&
+      normalizeYearLabel(mem.academic_year) === yearLabel &&
       norm(mem.department) === norm('Major Leadership / Administrative Positions') &&
       (norm(mem.program) === norm(programName) || norm(mem.dean_department) === norm(programName))
     ).length;
   };
 
   const currentFacultyList = useMemo(() => {
-       if (!selectedYear) return [];
-       if (selectedDept === "Academic / Teaching Positions" && selectedSubDept && selectedProgram) {
-          return (faculty || []).filter(mem =>
-               toYearLabel(mem.academic_year) === selectedYear &&
-               norm(mem.program) === norm(selectedSubDept) &&
-               norm(mem.assigned_program) === norm(selectedProgram)
-           );
-       }
-       if (selectedDept === "Major Leadership / Administrative Positions" && selectedSubDept === "Deans" && selectedProgram) {
-          return (faculty || []).filter(mem =>
-              toYearLabel(mem.academic_year) === selectedYear &&
-              norm(mem.department) === norm('Major Leadership / Administrative Positions') &&
-              (norm(mem.program) === norm(selectedProgram) || norm(mem.dean_department) === norm(selectedProgram))
-          );
-       }
-       return (facultyByYearDept[selectedYear] &&
-           facultyByYearDept[selectedYear][selectedSubDept || selectedDept]) || [];
+     if (!selectedYear) return [];
+     if (selectedDept === "Academic / Teaching Positions" && selectedSubDept && selectedProgram) {
+      return (faculty || []).filter(mem =>
+         normalizeYearLabel(mem.academic_year) === selectedYear &&
+         norm(mem.program) === norm(selectedSubDept) &&
+         norm(mem.assigned_program) === norm(selectedProgram)
+       );
+     }
+     if (selectedDept === "Major Leadership / Administrative Positions" && selectedSubDept === "Deans" && selectedProgram) {
+      return (faculty || []).filter(mem =>
+        normalizeYearLabel(mem.academic_year) === selectedYear &&
+        norm(mem.department) === norm('Major Leadership / Administrative Positions') &&
+        (norm(mem.program) === norm(selectedProgram) || norm(mem.dean_department) === norm(selectedProgram))
+      );
+     }
+     return (facultyByYearDept[selectedYear] &&
+       facultyByYearDept[selectedYear][selectedSubDept || selectedDept]) || [];
   }, [selectedYear, selectedDept, selectedSubDept, selectedProgram, faculty, facultyByYearDept]);
 
   return (
@@ -1080,6 +1149,7 @@ const Faculty = () => {
           display: "flex",
           alignItems: "center",
           gap: 24,
+          flexWrap: 'wrap',
           background: "#fff",
           borderRadius: 16,
           boxShadow: "0 2px 8px #0001",
@@ -1112,7 +1182,7 @@ const Faculty = () => {
             boxShadow: "0 1px 2px #0001"
           }}
         />
-        <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, alignItems:'center', flexWrap:'wrap' }}>
           <select
             className="students-filter-select"
             value={selectedYear || ""}
@@ -1141,11 +1211,33 @@ const Faculty = () => {
               </option>
             ))}
           </select>
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <button
+              type="button"
+              onClick={() => setViewMode('folder')}
+              style={{
+                background: viewMode==='folder'? '#6366f1':'#e5e7eb',
+                color: viewMode==='folder'? '#fff':'#374151',
+                border:'none', padding:'8px 14px', borderRadius:10, fontWeight:600,
+                cursor:'pointer', minWidth:100
+              }}
+            >Folder View</button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              style={{
+                background: viewMode==='table'? '#6366f1':'#e5e7eb',
+                color: viewMode==='table'? '#fff':'#374151',
+                border:'none', padding:'8px 14px', borderRadius:10, fontWeight:600,
+                cursor:'pointer', minWidth:100
+              }}
+            >Table View</button>
+          </div>
         </div>
       </div>
       
       <div className="students-list-card">
-        {!selectedYear && !showArchived && !isSearchActive && (
+        {viewMode==='folder' && !selectedYear && !showArchived && !isSearchActive && (
           <div className="students-folders-container">
             <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
               {visibleYearFolders.map((label) => {
@@ -1250,7 +1342,7 @@ const Faculty = () => {
           </div>
         )}
 
-        {!selectedYear && showArchived && (
+        {viewMode==='folder' && !selectedYear && showArchived && (
           <div className="students-folders-container">
             <div style={{ display: "flex", gap: "32px", flexWrap: "wrap" }}>
               {archivedYears.length === 0 && (
@@ -1282,7 +1374,7 @@ const Faculty = () => {
           </div>
         )}
 
-        {selectedYear && !selectedDept && (
+        {viewMode==='folder' && selectedYear && !selectedDept && (
           <div>
             <div
               style={{
@@ -1403,7 +1495,7 @@ const Faculty = () => {
           </div>
         )}
 
-        {selectedYear && departmentSubfolders[selectedDept] && !selectedSubDept && (
+        {viewMode==='folder' && selectedYear && departmentSubfolders[selectedDept] && !selectedSubDept && (
           <div>
             <div
               style={{
@@ -1508,7 +1600,7 @@ const Faculty = () => {
           </div>
         )}
 
-        {selectedYear &&
+        {viewMode==='folder' && selectedYear &&
           selectedDept === "Academic / Teaching Positions" &&
           selectedSubDept &&
           !selectedProgram && (
@@ -1611,7 +1703,7 @@ const Faculty = () => {
           </div>
         )}
 
-        {selectedYear &&
+        {viewMode==='folder' && selectedYear &&
           selectedDept === "Major Leadership / Administrative Positions" &&
           selectedSubDept === "Deans" &&
           !selectedProgram && (
@@ -1714,7 +1806,7 @@ const Faculty = () => {
           </div>
         )}
 
-        {selectedYear && (
+  {viewMode==='folder' && selectedYear && (
                     (!departmentSubfolders[selectedDept] && selectedDept) ||
                     (selectedDept === "Academic / Teaching Positions" && selectedSubDept && selectedProgram) ||
                     (selectedDept === "Major Leadership / Administrative Positions" && selectedSubDept === "Deans" && selectedProgram) ||
@@ -1914,7 +2006,7 @@ const Faculty = () => {
                     </div>
                 )}
 
-				{!selectedYear && !showArchived && isSearchActive && (
+        {viewMode==='folder' && !selectedYear && !showArchived && isSearchActive && (
 					<div>
 						<div
 							style={{
@@ -2098,6 +2190,97 @@ const Faculty = () => {
 						</div>
 					</div>
 				)}
+
+        {viewMode==='table' && (
+          <div style={{ marginTop: 32 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:12 }}>
+              <div style={{ fontSize:'1.25rem', fontWeight:700 }}>All Faculty Table {selectedYear && `• ${selectedYear}`} {selectedDept && `• ${selectedDept}`}</div>
+              <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+                {!selectionMode ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectionMode(true)}
+                    style={{ background:'#eef2ff', color:'#4f46e5', border:'1px solid #c7d2fe', padding:'6px 12px', borderRadius:8, fontWeight:700 }}
+                  >Select</button>
+                ) : (
+                  <>
+                    <label style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+                      <input
+                        type="checkbox"
+                        onChange={toggleSelectAll}
+                        checked={(() => { const list = getCurrentVisibleList(); return list.length>0 && list.every(m=> selectedIds.has(m.id)); })()}
+                      /> Select All
+                    </label>
+                    <button type="button" onClick={() => { setSelectionMode(false); setSelectedIds(new Set()); }} style={{ background:'#e5e7eb', border:'none', padding:'6px 12px', borderRadius:8, fontWeight:700 }}>Cancel</button>
+                    <button type="button" onClick={openBulkDelete} disabled={[...selectedIds].length===0} style={{ background:[...selectedIds].length===0?'#fecaca':'#ef4444', color:'#fff', border:'none', padding:'6px 12px', borderRadius:8, fontWeight:700, cursor:[...selectedIds].length===0?'not-allowed':'pointer' }}>Delete Selected ({[...selectedIds].length})</button>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="students-list-table">
+              <div className="students-list-header" style={{ gridTemplateColumns: selectionMode ? '28px 1.4fr 1fr 1fr 1fr .9fr .9fr 140px' : '1.4fr 1fr 1fr 1fr .9fr .9fr 140px' }}>
+                {selectionMode && <div />}
+                <div style={{ cursor:'pointer' }} onClick={()=> toggleSortField('name')}>Name {tableSort.field==='name' && (tableSort.direction==='asc'?'▲':'▼')}</div>
+                <div style={{ cursor:'pointer' }} onClick={()=> toggleSortField('department')}>Department {tableSort.field==='department' && (tableSort.direction==='asc'?'▲':'▼')}</div>
+                <div style={{ cursor:'pointer' }} onClick={()=> toggleSortField('program')}>Program/Position {tableSort.field==='program' && (tableSort.direction==='asc'?'▲':'▼')}</div>
+                <div style={{ cursor:'pointer' }} onClick={()=> toggleSortField('assigned_program')}>Assigned Program {tableSort.field==='assigned_program' && (tableSort.direction==='asc'?'▲':'▼')}</div>
+                <div style={{ cursor:'pointer' }} onClick={()=> toggleSortField('academic_year')}>School Year {tableSort.field==='academic_year' && (tableSort.direction==='asc'?'▲':'▼')}</div>
+                <div style={{ cursor:'pointer' }} onClick={()=> toggleSortField('status')}>Status {tableSort.field==='status' && (tableSort.direction==='asc'?'▲':'▼')}</div>
+                <div style={{ cursor:'pointer' }} onClick={()=> toggleSortField('updated_at')}>Updated {tableSort.field==='updated_at' && (tableSort.direction==='asc'?'▲':'▼')}</div>
+                <div>Actions</div>
+              </div>
+              {sortedTableFaculty.length === 0 && (
+                <div style={{ padding:32, textAlign:'center', color:'#888' }}>No faculty found.</div>
+              )}
+              {sortedTableFaculty.map((mem) => (
+                <div key={mem.id} className="students-list-row" style={{ cursor: selectionMode? 'default':'pointer' }} onClick={handleRowClick(mem)}>
+                  {selectionMode && (
+                    <div style={{ display:'flex', alignItems:'center', paddingLeft:8 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(mem.id)}
+                        onChange={(e) => {
+                          const next = new Set(selectedIds);
+                          if (e.target.checked) next.add(mem.id); else next.delete(mem.id);
+                          setSelectedIds(next);
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div className="students-list-student" style={{ display:'flex', alignItems:'center', gap:12 }}>
+                    <img src={mem.photo_url || mem.avatar || '/avatar1.png'} alt={mem.first_name+' '+mem.last_name} className="students-list-avatar" />
+                    <div>
+                      <div className="students-list-name">{mem.first_name} {mem.last_name}</div>
+                      <div className="students-list-id">ID: {mem.id}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontWeight:600 }}>{mem.department || '—'}</div>
+                  <div style={{ fontSize:'.85rem', color:'#4f46e5', fontWeight:500 }}>{mem.program && mem.program!==mem.department ? mem.program : '—'}</div>
+                  <div style={{ fontSize:'.85rem', color:'#0ea5e9', fontWeight:500 }}>{mem.assigned_program || '—'}</div>
+                  <div style={{ fontSize:'.85rem', color:'#374151' }}>{toYearLabel(mem.academic_year) || '—'}</div>
+                  <div>
+                    <span className="students-status-badge" style={{
+                      background: mem.status==='Active'? '#22c55e' : mem.status==='Inactive'? '#f59e42' : (mem.status==='On leave'? '#f59e0b' : mem.status==='Probationary'? '#a78bfa' : '#aaa'),
+                      color:'#fff', fontWeight:600 }}>
+                      {mem.status || '—'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize:'.75rem', display:'flex', alignItems:'center', gap:4 }}>
+                    <span className="students-list-updated-icon">🕒</span>{mem.updated_at ? new Date(mem.updated_at).toLocaleString() : ''}
+                  </div>
+                  <div className="students-list-actions">
+                    <button className="students-action-btn" title="Edit" onClick={() => handleEdit(mem)} style={{ marginRight:8 }}>
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M3 17.25V21h3.75l11.06-11.06-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z" fill="#888"/></svg>
+                    </button>
+                    <button className="students-action-btn" title="Delete" onClick={() => handleDeleteClick(mem)} style={{ color:'#e11d48' }}>
+                      <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M3 6h18M8 6v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6m-6 0V4a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v2" stroke="#e11d48" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
 			</div>
 
