@@ -203,6 +203,20 @@
   text-align: center;
 }
 
+.auth-error-note {
+  width: 100%;
+  background: #f5f7fa;
+  border: 1px solid #e5e7eb;
+  border-left: 5px solid #BA0C2F;
+  color: #BA0C2F;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  margin: 0.75rem 0 1.25rem 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .auth-form {
   width: 100%;
 }

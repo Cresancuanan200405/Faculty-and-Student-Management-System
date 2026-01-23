@@ -5,6 +5,7 @@ import { useNavigate, Link } from 'react-router-dom';
 function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: '', email: '', username: '', password: '', position: 'System Administrator' });
+  const [errorNote, setErrorNote] = useState('');
 
   useEffect(() => {
     const token = localStorage.getItem('token') || sessionStorage.getItem('token');
@@ -12,17 +13,36 @@ function Register() {
   }, []);
 
   const handleChange = (e) => {
+    if (errorNote) setErrorNote('');
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setErrorNote('');
     try {
   await axios.post('/api/register', form);
   alert("Registration successful! Please log in.");
   navigate("/login");
     } catch (err) {
-      alert("Registration failed: " + (err.response?.data?.message || err.message));
+      const response = err?.response;
+      const data = response?.data;
+
+      let note = 'Registration failed. Please try again.';
+
+      if (!response) {
+        note = 'Registration failed: unable to reach the server. Please check your connection and try again.';
+      } else if (data?.errors && typeof data.errors === 'object') {
+        const firstField = Object.keys(data.errors)[0];
+        const fieldErrors = data.errors[firstField];
+        note = Array.isArray(fieldErrors) ? fieldErrors[0] : String(fieldErrors);
+      } else if (data?.message) {
+        note = data.message;
+      } else if (response?.status) {
+        note = `Registration failed (HTTP ${response.status}). Please try again.`;
+      }
+
+      setErrorNote(note);
     }
   };
 
@@ -39,6 +59,9 @@ function Register() {
       <div className="auth-right">
         <div className="auth-card">
           <h3 className="auth-login-title">USER REGISTER</h3>
+          {errorNote ? (
+            <div className="auth-error-note" role="alert">{errorNote}</div>
+          ) : null}
           <form onSubmit={handleSubmit} className="auth-form">
             <div className="auth-input-group">
               <span className="auth-icon">

@@ -1,0 +1,9 @@
+node_modules
+.env
+.env.*.php
+.phpunit.result.cache
+storage/logs
+storage/framework/cache
+bootstrap/cache
+tests
+README.md
